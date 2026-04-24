@@ -1132,4 +1132,4 @@ class WhitelistModal(discord.ui.Modal):
         
         conn.close()
 
-bot.run("MTQyNjI1NDEyNjE2MDk0MTA4NQ.GraR20.orpRf7HtnjTrghu-WTcffRUSa7Hkj9RmLDqvFM")
+bot.run(os.environ.get("DISCORD_TOKEN"))
