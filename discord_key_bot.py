@@ -1132,4 +1132,4 @@ class WhitelistModal(discord.ui.Modal):
         
         conn.close()
 
-bot.run("MTQyNjI1NDEyNjE2MDk0MTA4NQ.G4SkGn.87aMiCDc-_-NxOmSapl208vvTXlqUrZw2EAm7k")
+bot.run("MTQyNjI1NDEyNjE2MDk0MTA4NQ.GraR20.orpRf7HtnjTrghu-WTcffRUSa7Hkj9RmLDqvFM")
