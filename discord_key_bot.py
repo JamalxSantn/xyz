@@ -1512,7 +1512,7 @@ async def ticket(ctx):
         color=TICKET_EMBED_COLOR
     )
     embed.set_footer(text="Rayx Support © 2026")
-    embed.set_timestamp()
+    embed.timestamp = datetime.now()
     await ctx.send(embed=embed, view=TicketView())
 
 @bot.event
