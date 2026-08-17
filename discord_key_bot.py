@@ -1420,7 +1420,7 @@ class TicketSelect(discord.ui.Select):
         ticket_messages[ticket_channel.id] = []
 
         embed = discord.Embed(
-            title=f"RAYX#1 {type_name}",
+            title=f"🎫 RAYX#1 {type_name}",
             description=f"Hello {member.mention}, welcome to your **{type_name}** ticket.\n\nPlease describe your issue and a staff member will assist you.",
             color=TICKET_EMBED_COLOR
         )
@@ -1429,7 +1429,7 @@ class TicketSelect(discord.ui.Select):
 
         view = TicketButtons()
         await ticket_channel.send(content=f"{member.mention}", embed=embed, view=view)
-        await interaction.response.send_message(f"✅ Dein Ticket wurde erstellt: {ticket_channel.mention}", ephemeral=True)
+        await interaction.response.defer()
         await send_ticket_log(f"🎫 **New Ticket Created**\n> By: {member}\n> Type: {type_name}\n> Channel: {ticket_channel.mention}")
 
 class TicketView(discord.ui.View):
