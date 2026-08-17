@@ -1497,7 +1497,7 @@ async def ticket(ctx):
         return
     embed = discord.Embed(
         title="Rayx Ticket",
-        description="Wähle eine Option um ein Ticket zu eröffnen.",
+        description="Select an option to create a ticket.",
         color=TICKET_EMBED_COLOR
     )
     embed.set_image(url=TICKET_LOGO_URL)
