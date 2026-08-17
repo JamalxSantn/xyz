@@ -1381,13 +1381,13 @@ async def send_ticket_log(message):
 class TicketSelect(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="Advanced Phone", description="If you want to buy the Advanced Phone Plan click here", emoji="📱", value="advanced_phone"),
+            discord.SelectOption(label="Advanced", description="If you want to buy the Advanced Plan click here", emoji="📱", value="advanced_phone"),
             discord.SelectOption(label="Support", description="If you have a question click here", emoji="❓", value="support")
         ]
         super().__init__(placeholder="Triff eine Auswahl", options=options, custom_id="ticket_select")
 
     async def callback(self, interaction: discord.Interaction):
-        type_name = "Advanced Phone" if self.values[0] == "advanced_phone" else "Support"
+        type_name = "Advanced" if self.values[0] == "advanced_phone" else "Support"
         member = interaction.user
         guild = interaction.guild
 
