@@ -34,6 +34,7 @@ TICKET_EMBED_COLOR = 0x000000
 TICKET_LOGO_URL = "https://raw.githubusercontent.com/JamalxSantn/xyz/main/ticket_logo.png"
 ADVANCED_CATEGORY_ID = 1472321807603335208
 SUPPORT_CATEGORY_ID = 1487794310022959205
+CLOSED_CATEGORY_ID = 1472321805174706238
 ticket_channels = {}
 ticket_messages = {}
 
@@ -1449,6 +1450,15 @@ class TicketButtons(discord.ui.View):
 
         await interaction.response.send_message("🔒 Ticket wird geschlossen...")
         user = await bot.fetch_user(ticket_data["user_id"])
+
+        closed_category = interaction.guild.get_channel(CLOSED_CATEGORY_ID)
+        if closed_category:
+            await interaction.channel.edit(category=closed_category)
+
+        overwrite = interaction.channel.overwrites_for(interaction.guild.default_role)
+        overwrite.view_channel = False
+        await interaction.channel.set_permissions(interaction.guild.default_role, overwrite=overwrite)
+        await interaction.channel.set_permissions(user, view_channel=False)
 
         embed = discord.Embed(
             title="Ticket Closed",
