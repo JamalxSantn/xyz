@@ -42,26 +42,7 @@ GIST_TOKEN = "gho_" + "WUVZeTTwvNTiSZ0FhYR9dEhGoYzjpc3qj0Um"
 DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys.db")
 
 def check_self_update():
-    try:
-        url = "https://raw.githubusercontent.com/JamalxSantn/xyz/master/discord_key_bot.py"
-        req = urllib.request.Request(url, headers={"User-Agent": "PeroxideBot"})
-        new_code = urllib.request.urlopen(req, timeout=15).read().decode("utf-8")
-        current_file = os.path.abspath(__file__)
-        with open(current_file, "r", encoding="utf-8", newline="") as f:
-            current = f.read()
-        if new_code.replace("\r\n", "\n") == current.replace("\r\n", "\n"):
-            print("Self-Update: Kein Update gefunden.")
-            return
-        compile(new_code, current_file, "exec")
-        with open(current_file, "w", encoding="utf-8", newline="") as f:
-            f.write(new_code)
-        print("Self-Update: Neue Version gefunden, Bot startet neu...")
-        subprocess.Popen([sys.executable, current_file])
-        sys.exit(0)
-    except SyntaxError as e:
-        print(f"Self-Update übersprungen (Syntaxfehler im Update): {e}")
-    except Exception as e:
-        print(f"Self-Update error: {e}")
+    print("Self-Update: Deaktiviert.")
 
 check_self_update()
 
