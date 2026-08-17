@@ -1419,17 +1419,17 @@ class TicketSelect(discord.ui.Select):
         ticket_messages[ticket_channel.id] = []
 
         embed = discord.Embed(
-            title=f"Rayx {type_name} Ticket",
-            description=f"Hallo {member.mention}, willkommen bei deinem **{type_name}** Ticket.\n\nBitte beschreibe dein Anliegen und ein Mitarbeiter wird sich bei dir melden.",
+            title=f"RAYX#1 {type_name}",
+            description=f"Hello {member.mention}, welcome to your **{type_name}** ticket.\n\nPlease describe your issue and a staff member will assist you.",
             color=TICKET_EMBED_COLOR
         )
         embed.set_thumbnail(url=TICKET_LOGO_URL)
-        embed.set_footer(text=f"Erstellt von {member} • Rayx Support © 2026")
+        embed.set_footer(text=f"Created by {member} • Rayx Support © 2026")
 
         view = TicketButtons()
         await ticket_channel.send(content=f"{member.mention}", embed=embed, view=view)
         await interaction.response.send_message(f"✅ Dein Ticket wurde erstellt: {ticket_channel.mention}", ephemeral=True)
-        await send_ticket_log(f"🎫 **Neues Ticket erstellt**\n> Von: {member}\n> Typ: {type_name}\n> Channel: {ticket_channel.mention}")
+        await send_ticket_log(f"🎫 **New Ticket Created**\n> By: {member}\n> Type: {type_name}\n> Channel: {ticket_channel.mention}")
 
 class TicketView(discord.ui.View):
     def __init__(self):
@@ -1440,7 +1440,7 @@ class TicketButtons(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
 
-    @discord.ui.button(label="Ticket schließen", style=discord.ButtonStyle.danger, custom_id="close_ticket", emoji="🔒")
+    @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         ticket_data = ticket_channels.get(interaction.channel.id)
         if not ticket_data:
@@ -1451,14 +1451,14 @@ class TicketButtons(discord.ui.View):
         user = await bot.fetch_user(ticket_data["user_id"])
 
         embed = discord.Embed(
-            title="🔒 Ticket geschlossen",
-            description=f"**Ticket wurde geschlossen:**\n> Geschlossen von: {interaction.user}\n> Erstellt von: {user}\n> Typ: {ticket_data['type']}\n> Erstellt am: <t:{int(ticket_data['created_at'].timestamp())}:F>\n> Geschlossen am: <t:{int(datetime.now().timestamp())}:F>",
+            title="Ticket Closed",
+            description=f"**Ticket has been closed:**\n> Closed by: {interaction.user}\n> Created by: {user}\n> Type: {ticket_data['type']}",
             color=0xff0000
         )
         embed.set_footer(text="Rayx Support © 2026")
         await interaction.channel.send(embed=embed)
 
-        await send_ticket_log(f"🔒 **Ticket geschlossen**\n> Von: {interaction.user}\n> Ticket: {interaction.channel.mention}\n> Erstellt von: {user}\n> Typ: {ticket_data['type']}")
+        await send_ticket_log(f"**Ticket closed**\n> By: {interaction.user}\n> Ticket: {interaction.channel.mention}\n> Created by: {user}\n> Type: {ticket_data['type']}")
 
         ticket_channels.pop(interaction.channel.id, None)
         ticket_messages.pop(interaction.channel.id, None)
@@ -1469,26 +1469,6 @@ class TicketButtons(discord.ui.View):
         except:
             pass
 
-    @discord.ui.button(label="Ticket umbenennen", style=discord.ButtonStyle.grey, custom_id="rename_ticket", emoji="✏️")
-    async def rename_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ticket_data = ticket_channels.get(interaction.channel.id)
-        if not ticket_data:
-            await interaction.response.send_message("❌ Dies ist kein Ticket.", ephemeral=True)
-            return
-        await interaction.response.send_modal(RenameModal())
-
-class RenameModal(discord.ui.Modal):
-    def __init__(self):
-        super().__init__(title="Ticket umbenennen")
-        self.new_name = discord.ui.TextInput(label="Neuer Name", placeholder="Gib den neuen Ticket-Namen ein", style=discord.TextStyle.short, required=True)
-        self.add_item(self.new_name)
-
-    async def on_submit(self, interaction: discord.Interaction):
-        name = self.new_name.value.lower().replace(" ", "-").replace("ticket-", "")
-        await interaction.channel.edit(name=f"ticket-{name}")
-        await interaction.response.send_message(f"✅ Ticket wurde zu **{name}** umbenannt.", ephemeral=True)
-        await send_ticket_log(f"✏️ **Ticket umbenannt**\n> Von: {interaction.user}\n> Neuer Name: {name}\n> Channel: {interaction.channel.mention}")
-
 @bot.command()
 @commands.has_permissions(administrator=True)
 async def ticket(ctx):
@@ -1496,7 +1476,7 @@ async def ticket(ctx):
         await ctx.send("❌ Dieser Befehl ist nur im Ticket-Channel verfügbar.", delete_after=5)
         return
     embed = discord.Embed(
-        title="Rayx Ticket",
+        title="RAYX#1",
         description="Select an option to create a ticket.",
         color=TICKET_EMBED_COLOR
     )
