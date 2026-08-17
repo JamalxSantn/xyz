@@ -1420,11 +1420,11 @@ class TicketSelect(discord.ui.Select):
 
         embed = discord.Embed(
             title=f"Rayx {type_name} Ticket",
-            description=f"Hallo {member.mention}, willkommen bei deinem **{type_name}** Ticket.\n\nBitte beschreibe dein Anliegen und ein Mitarbeiter wird sich bei dir melden.\n\n**Ticket Info:**\n> Erstellt von: {member}\n> Typ: {type_name}\n> Erstellt am: <t:{int(datetime.now().timestamp())}:F>",
+            description=f"Hallo {member.mention}, willkommen bei deinem **{type_name}** Ticket.\n\nBitte beschreibe dein Anliegen und ein Mitarbeiter wird sich bei dir melden.",
             color=TICKET_EMBED_COLOR
         )
-        embed.set_image(url=TICKET_LOGO_URL)
-        embed.set_footer(text="Rayx Support © 2026")
+        embed.set_thumbnail(url=TICKET_LOGO_URL)
+        embed.set_footer(text=f"Erstellt von {member} • Rayx Support © 2026")
 
         view = TicketButtons()
         await ticket_channel.send(content=f"{member.mention}", embed=embed, view=view)
@@ -1497,10 +1497,11 @@ async def ticket(ctx):
         return
     embed = discord.Embed(
         title="Rayx Ticket",
+        description="Wähle eine Option um ein Ticket zu eröffnen.",
         color=TICKET_EMBED_COLOR
     )
     embed.set_image(url=TICKET_LOGO_URL)
-    embed.set_footer(text="Rayx Support © 2026")
+    embed.set_footer(text="Rayx Bypass © 2026")
     embed.timestamp = datetime.now()
     await ctx.send(embed=embed, view=TicketView())
 
