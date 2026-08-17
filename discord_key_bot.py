@@ -30,7 +30,7 @@ MASTER_ID = "1027571297514967140"
 TICKET_GUILD_ID = 1472228342118879370
 TICKET_CHANNEL_ID = 1472321913828147421
 TICKET_LOG_CHANNEL_ID = 1487068508935426238
-TICKET_EMBED_COLOR = 0x00d4ff
+TICKET_EMBED_COLOR = 0x000000
 TICKET_LOGO_URL = "https://raw.githubusercontent.com/JamalxSantn/xyz/main/ticket_logo.png"
 ADVANCED_CATEGORY_ID = 1472321807603335208
 SUPPORT_CATEGORY_ID = 1487794310022959205
@@ -1497,7 +1497,6 @@ async def ticket(ctx):
         return
     embed = discord.Embed(
         title="Rayx Ticket",
-        description="**Triff eine Auswahl um ein Ticket zu eröffnen:**\n\n- **Advanced Phone** — If you want to buy the Advanced Phone Plan click here\n- **Support** — If you have a question click here",
         color=TICKET_EMBED_COLOR
     )
     embed.set_image(url=TICKET_LOGO_URL)
