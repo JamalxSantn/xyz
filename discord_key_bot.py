@@ -40,7 +40,7 @@ DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys.db")
 
 def check_self_update():
     try:
-        url = "https://raw.githubusercontent.com/JamalxSantn/xyz/main/discord_key_bot.py"
+        url = "https://raw.githubusercontent.com/JamalxSantn/xyz/master/discord_key_bot.py"
         req = urllib.request.Request(url, headers={"User-Agent": "PeroxideBot"})
         new_code = urllib.request.urlopen(req, timeout=15).read().decode("utf-8")
         current_file = os.path.abspath(__file__)
