@@ -1502,7 +1502,6 @@ async def ticket(ctx):
     )
     embed.set_image(url=TICKET_LOGO_URL)
     embed.set_footer(text="Rayx Bypass © 2026")
-    embed.timestamp = datetime.now()
     await ctx.send(embed=embed, view=TicketView())
 
 @bot.event
