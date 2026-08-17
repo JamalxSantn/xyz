@@ -27,6 +27,7 @@ GUILD_ID = 1537561860163768412
 MASTER_ID = "1027571297514967140"
 
 # === TICKET SYSTEM CONFIG ===
+TICKET_GUILD_ID = 1472228342118879370
 TICKET_CHANNEL_ID = 1472321913828147421
 TICKET_LOG_CHANNEL_ID = 1487068508935426238
 TICKET_EMBED_COLOR = 0x00d4ff
@@ -1384,7 +1385,7 @@ class WhitelistModal(discord.ui.Modal):
 # === TICKET SYSTEM START ===
 async def send_ticket_log(message):
     try:
-        guild = bot.get_guild(GUILD_ID)
+        guild = bot.get_guild(TICKET_GUILD_ID)
         if guild:
             log_channel = guild.get_channel(TICKET_LOG_CHANNEL_ID)
             if log_channel:
@@ -1502,7 +1503,7 @@ class RenameModal(discord.ui.Modal):
 
 async def post_ticket_panel():
     try:
-        guild = bot.get_guild(GUILD_ID)
+        guild = bot.get_guild(TICKET_GUILD_ID)
         if guild:
             channel = guild.get_channel(TICKET_CHANNEL_ID)
             if channel:
