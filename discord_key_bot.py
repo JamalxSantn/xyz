@@ -1503,10 +1503,13 @@ class RenameModal(discord.ui.Modal):
 
 async def post_ticket_panel():
     try:
+        print(f"[TICKET] Suche Guild {TICKET_GUILD_ID}...")
         guild = bot.get_guild(TICKET_GUILD_ID)
         if guild:
+            print(f"[TICKET] Guild gefunden: {guild.name}")
             channel = guild.get_channel(TICKET_CHANNEL_ID)
             if channel:
+                print(f"[TICKET] Channel gefunden: {channel.name}")
                 embed = discord.Embed(
                     title="Rayx Ticket",
                     description="**Triff eine Auswahl um ein Ticket zu eröffnen:**\n\n- **Advanced Phone** — If you want to buy the Advanced Phone Plan click here\n- **Support** — If you have a question click here",
@@ -1516,11 +1519,22 @@ async def post_ticket_panel():
                 embed.set_timestamp()
 
                 existing = [m async for m in channel.history(limit=20) if m.author == bot.user and m.embeds and "Rayx Ticket" in m.embeds[0].title]
+                print(f"[TICKET] Existing panels: {len(existing)}")
                 if not existing:
                     await channel.send(embed=embed, view=TicketView())
-                    print("✅ Ticket Panel gesendet!")
+                    print("[TICKET] ✅ Ticket Panel gesendet!")
+                else:
+                    print("[TICKET] Panel existiert bereits")
+            else:
+                print(f"[TICKET] ❌ Channel {TICKET_CHANNEL_ID} nicht gefunden in {guild.name}")
+                print(f"[TICKET] Verfügbare Channels: {[c.name for c in guild.text_channels]}")
+        else:
+            print(f"[TICKET] ❌ Guild {TICKET_GUILD_ID} nicht gefunden")
+            print(f"[TICKET] Verfügbare Guilds: {[(g.name, g.id) for g in bot.guilds]}")
     except Exception as e:
-        print(f"Ticket Panel error: {e}")
+        print(f"[TICKET] ❌ Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 @bot.event
 async def on_message(message):
