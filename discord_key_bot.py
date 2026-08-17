@@ -31,6 +31,9 @@ TICKET_GUILD_ID = 1472228342118879370
 TICKET_CHANNEL_ID = 1472321913828147421
 TICKET_LOG_CHANNEL_ID = 1487068508935426238
 TICKET_EMBED_COLOR = 0x00d4ff
+TICKET_LOGO_URL = "https://media.discordapp.net/attachments/1492346393933906024/1538718605712035910/85018bcb-4d6d-41f2-bd97-5d6586fe4397.png?ex=6a83b2df&is=6a82615f&hm=72fb199f0783755049d47aa62330ccb848c431e10e031919ad4be23d7d2ac63e&=&format=webp&quality=lossless&width=512&height=205"
+ADVANCED_CATEGORY_ID = 1472321807603335208
+SUPPORT_CATEGORY_ID = 1487794310022959205
 ticket_channels = {}
 ticket_messages = {}
 
@@ -1418,9 +1421,13 @@ class TicketSelect(discord.ui.Select):
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True)
         }
 
+        category_id = ADVANCED_CATEGORY_ID if self.values[0] == "advanced_phone" else SUPPORT_CATEGORY_ID
+        category = guild.get_channel(category_id)
+
         ticket_channel = await guild.create_text_channel(
             name=f"ticket-{member.name.lower()}",
-            overwrites=overwrites
+            overwrites=overwrites,
+            category=category
         )
 
         ticket_channels[ticket_channel.id] = {
@@ -1435,6 +1442,7 @@ class TicketSelect(discord.ui.Select):
             description=f"Hallo {member.mention}, willkommen bei deinem **{type_name}** Ticket.\n\nBitte beschreibe dein Anliegen und ein Mitarbeiter wird sich bei dir melden.\n\n**Ticket Info:**\n> Erstellt von: {member}\n> Typ: {type_name}\n> Erstellt am: <t:{int(datetime.now().timestamp())}:F>",
             color=TICKET_EMBED_COLOR
         )
+        embed.set_image(url=TICKET_LOGO_URL)
         embed.set_footer(text="Rayx Support © 2026")
 
         view = TicketButtons()
@@ -1511,6 +1519,7 @@ async def ticket(ctx):
         description="**Triff eine Auswahl um ein Ticket zu eröffnen:**\n\n- **Advanced Phone** — If you want to buy the Advanced Phone Plan click here\n- **Support** — If you have a question click here",
         color=TICKET_EMBED_COLOR
     )
+    embed.set_image(url=TICKET_LOGO_URL)
     embed.set_footer(text="Rayx Support © 2026")
     embed.timestamp = datetime.now()
     await ctx.send(embed=embed, view=TicketView())
