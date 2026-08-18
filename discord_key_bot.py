@@ -208,8 +208,11 @@ def api_auth():
             return jsonify({'success': False, 'error': 'HWID mismatch'}), 403
         send_key_log_sync("Key Login (Loader)", f"Key: `{password}`\nHWID: {hwid}\nDiscord ID: {username}", 0x00bfff)
     else:
-        c.execute("UPDATE keys SET used = 1, hwid = ?, discord_id = ? WHERE key = ?",
-                  (hwid, username, password))
+        if username and username.isdigit():
+            c.execute("UPDATE keys SET used = 1, hwid = ?, discord_id = ? WHERE key = ?",
+                      (hwid, username, password))
+        else:
+            c.execute("UPDATE keys SET used = 1, hwid = ? WHERE key = ?", (hwid, password))
         conn.commit()
         sync_db_to_gist()
         send_key_log_sync("Key Eingelöst (Loader)", f"Key: `{password}`\nHWID: {hwid}\nDiscord ID: {username}", 0x00ff00)
@@ -383,8 +386,11 @@ def register_hwid():
         conn.close()
         return jsonify({'success': False, 'error': 'Key expired'}), 403
     
-    c.execute("UPDATE keys SET used = 1, hwid = ?, discord_id = ? WHERE key = ?",
-              (hwid, discord_id, key))
+    if discord_id and discord_id.isdigit():
+        c.execute("UPDATE keys SET used = 1, hwid = ?, discord_id = ? WHERE key = ?",
+                  (hwid, discord_id, key))
+    else:
+        c.execute("UPDATE keys SET used = 1, hwid = ? WHERE key = ?", (hwid, key))
     conn.commit()
     sync_db_to_gist()
     conn.close()
@@ -570,7 +576,7 @@ async def listkeys(ctx):
         status = "✅ Benutzt" if used else "⏳ Unbenutzt"
         remaining = time_remaining(expires_at)
         
-        discord_info = f"<@{discord_id}> ({discord_id})" if discord_id else "N/A"
+        discord_info = f"<@{discord_id}> ({discord_id})" if discord_id and discord_id.isdigit() else "N/A"
         
         embed.add_field(
             name=f"{key} [{status}]",
@@ -915,7 +921,7 @@ class AdminMenuView(discord.ui.View):
         for row in results:
             key, _, discord_id, _, expires_at, _, _, used = row
             status = "Benutzt" if used else "Unbenutzt"
-            discord_info = f"<@{discord_id}>" if discord_id else "N/A"
+            discord_info = f"<@{discord_id}>" if discord_id and discord_id.isdigit() else "N/A"
             embed.add_field(name=f"{key}", value=f"Status: {status}\nTime: {time_remaining(expires_at)}\nDiscord: {discord_info}", inline=False)
         
         await interaction.response.send_message(embed=embed, ephemeral=True)
