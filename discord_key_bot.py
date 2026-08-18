@@ -32,6 +32,7 @@ TICKET_CHANNEL_ID = 1472321913828147421
 TICKET_LOG_CHANNEL_ID = 1487068508935426238
 TICKET_EMBED_COLOR = 0x000000
 TICKET_LOGO_URL = "https://media.discordapp.net/attachments/1530255097450336347/1538835234831859733/rayxbypass.png?ex=6a84c83e&is=6a8376be&hm=e49e620dc9563764c1a412cca5ad78e5f58c0b34cda1b9250894ce246bb54ee9&=&format=webp&quality=lossless"
+TICKET_BANNER_URL = "https://raw.githubusercontent.com/JamalxSantn/xyz/main/banner.png"
 ADVANCED_CATEGORY_ID = 1472321807603335208
 SUPPORT_CATEGORY_ID = 1487794310022959205
 CLOSED_CATEGORY_ID = 1472321805174706238
@@ -1490,7 +1491,7 @@ async def ticket(ctx):
         description="Select an option to create a ticket.",
         color=TICKET_EMBED_COLOR
     )
-    embed.set_image(url=TICKET_LOGO_URL)
+    embed.set_image(url=TICKET_BANNER_URL)
     embed.set_footer(text="Rayx Bypass © 2026")
     await ctx.send(embed=embed, view=TicketView())
 
