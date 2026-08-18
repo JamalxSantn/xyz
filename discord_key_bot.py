@@ -31,7 +31,7 @@ TICKET_GUILD_ID = 1472228342118879370
 TICKET_CHANNEL_ID = 1472321913828147421
 TICKET_LOG_CHANNEL_ID = 1487068508935426238
 TICKET_EMBED_COLOR = 0x000000
-TICKET_LOGO_URL = "https://raw.githubusercontent.com/JamalxSantn/xyz/main/ticket_logo.png"
+TICKET_LOGO_URL = "https://media.discordapp.net/attachments/1530255097450336347/1538835234831859733/rayxbypass.png?ex=6a84c83e&is=6a8376be&hm=e49e620dc9563764c1a412cca5ad78e5f58c0b34cda1b9250894ce246bb54ee9&=&format=webp&quality=lossless"
 ADVANCED_CATEGORY_ID = 1472321807603335208
 SUPPORT_CATEGORY_ID = 1487794310022959205
 CLOSED_CATEGORY_ID = 1472321805174706238
@@ -1382,10 +1382,10 @@ async def send_ticket_log(message):
 class TicketSelect(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="Advanced", description="If you want to buy the Advanced Plan click here", emoji="📱", value="advanced_phone"),
-            discord.SelectOption(label="Support", description="If you have a question click here", emoji="❓", value="support")
+            discord.SelectOption(label="Advanced", description="If you want to buy the Advanced Plan click here", emoji="💎", value="advanced_phone"),
+            discord.SelectOption(label="Support", description="If you have a question click here", emoji="🛡️", value="support")
         ]
-        super().__init__(placeholder="Triff eine Auswahl", options=options, custom_id="ticket_select")
+        super().__init__(placeholder="Select an option", options=options, custom_id="ticket_select")
 
     async def callback(self, interaction: discord.Interaction):
         type_name = "Advanced" if self.values[0] == "advanced_phone" else "Support"
@@ -1448,7 +1448,7 @@ class TicketButtons(discord.ui.View):
             await interaction.response.send_message("❌ Dies ist kein Ticket.", ephemeral=True)
             return
 
-        await interaction.response.send_message("🔒 Ticket wird geschlossen...")
+        await interaction.response.send_message("🔒 Closing ticket...")
         user = await bot.fetch_user(ticket_data["user_id"])
 
         closed_category = interaction.guild.get_channel(CLOSED_CATEGORY_ID)
