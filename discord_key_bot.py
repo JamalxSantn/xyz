@@ -1409,13 +1409,13 @@ async def send_ticket_log(message):
 class TicketSelect(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="Advanced", description="If you want to buy the Advanced Plan click here", emoji="<:rayx:1539179270335635487>", value="advanced_phone"),
+            discord.SelectOption(label="Kernel", description="If you want to buy the Kernel Plan click here", emoji="<:rayx:1539179270335635487>", value="advanced_phone"),
             discord.SelectOption(label="Support", description="If you have a question click here", emoji="<:shield:1487061406728720464>", value="support")
         ]
         super().__init__(placeholder="Select an option", options=options, custom_id="ticket_select")
 
     async def callback(self, interaction: discord.Interaction):
-        type_name = "Advanced" if self.values[0] == "advanced_phone" else "Support"
+        type_name = "Kernel" if self.values[0] == "advanced_phone" else "Support"
         member = interaction.user
         guild = interaction.guild
 
@@ -1512,6 +1512,7 @@ class DeleteTicketView(discord.ui.View):
 
     @discord.ui.button(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket_closed")
     async def delete_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await send_ticket_log(f"**Ticket deleted**\n> By: {interaction.user}\n> Ticket: {interaction.channel.name}")
         try:
             await interaction.channel.delete()
         except:
