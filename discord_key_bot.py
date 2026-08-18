@@ -1171,6 +1171,7 @@ async def on_ready():
     bot.add_view(WhitelistMenuView())
     bot.add_view(TicketView())
     bot.add_view(TicketButtons())
+    bot.add_view(DeleteTicketView())
     
     start_api_server()
     print("API Server gestartet auf http://0.0.0.0:5000")
@@ -1501,7 +1502,16 @@ class TicketButtons(discord.ui.View):
         ticket_messages.pop(interaction.channel.id, None)
         save_ticket_data()
 
-        await asyncio.sleep(5)
+        delete_view = discord.ui.View(timeout=None)
+        delete_view.add_item(discord.ui.Button(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket_closed"))
+        await interaction.channel.send(view=delete_view)
+
+class DeleteTicketView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket_closed")
+    async def delete_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         try:
             await interaction.channel.delete()
         except:
@@ -1511,7 +1521,7 @@ class TicketButtons(discord.ui.View):
 @commands.has_permissions(administrator=True)
 async def ticket(ctx):
     if ctx.channel.id != TICKET_CHANNEL_ID:
-        await ctx.send("❌ Dieser Befehl ist nur im Ticket-Channel verfügbar.", delete_after=5)
+        await ctx.send("This command is only available in the ticket channel.", delete_after=5)
         return
     embed = discord.Embed(
         title="RAYX#1",
