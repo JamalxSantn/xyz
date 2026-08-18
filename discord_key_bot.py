@@ -1382,8 +1382,8 @@ async def send_ticket_log(message):
 class TicketSelect(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="Advanced", description="If you want to buy the Advanced Plan click here", emoji="💎", value="advanced_phone"),
-            discord.SelectOption(label="Support", description="If you have a question click here", emoji="🛡️", value="support")
+            discord.SelectOption(label="Advanced", description="If you want to buy the Advanced Plan click here", emoji="<:rayx:1539179270335635487>", value="advanced_phone"),
+            discord.SelectOption(label="Support", description="If you have a question click here", emoji="<:shield:1487061406728720464>", value="support")
         ]
         super().__init__(placeholder="Select an option", options=options, custom_id="ticket_select")
 
