@@ -39,6 +39,30 @@ CLOSED_CATEGORY_ID = 1472321805174706238
 ticket_channels = {}
 ticket_messages = {}
 
+TICKET_DATA_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ticket_data.json")
+
+def load_ticket_data():
+    global ticket_channels
+    try:
+        if os.path.exists(TICKET_DATA_FILE):
+            with open(TICKET_DATA_FILE, "r") as f:
+                data = json.load(f)
+            for k, v in data.items():
+                ticket_channels[int(k)] = v
+            print(f"Loaded {len(ticket_channels)} tickets from file")
+    except Exception as e:
+        print(f"Error loading ticket data: {e}")
+
+def save_ticket_data():
+    try:
+        data = {}
+        for k, v in ticket_channels.items():
+            data[str(k)] = v
+        with open(TICKET_DATA_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        print(f"Error saving ticket data: {e}")
+
 GIST_ID = "1d00ee128d1f4d294ec95e3e160ec195"
 GIST_TOKEN = "gho_" + "WUVZeTTwvNTiSZ0FhYR9dEhGoYzjpc3qj0Um"
 DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys.db")
@@ -1141,6 +1165,7 @@ async def on_ready():
     
     await send_bot_log("Bot Gestartet", f"Bot ist online als {bot.user}")
     
+    load_ticket_data()
     bot.add_view(AdminMenuView())
     bot.add_view(UserMenuView())
     bot.add_view(WhitelistMenuView())
@@ -1416,12 +1441,13 @@ class TicketSelect(discord.ui.Select):
         ticket_channels[ticket_channel.id] = {
             "user_id": member.id,
             "type": type_name,
-            "created_at": datetime.now()
+            "created_at": datetime.now().isoformat()
         }
+        save_ticket_data()
         ticket_messages[ticket_channel.id] = []
 
         embed = discord.Embed(
-            title=f"🎫 RAYX#1 {type_name}",
+            title=f"RAYX#1 {type_name}",
             description=f"Hello {member.mention}, welcome to your **{type_name}** ticket.\n\nPlease describe your issue and a staff member will assist you.",
             color=TICKET_EMBED_COLOR
         )
@@ -1473,6 +1499,7 @@ class TicketButtons(discord.ui.View):
 
         ticket_channels.pop(interaction.channel.id, None)
         ticket_messages.pop(interaction.channel.id, None)
+        save_ticket_data()
 
         await asyncio.sleep(5)
         try:
