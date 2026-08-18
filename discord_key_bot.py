@@ -1472,10 +1472,10 @@ class TicketButtons(discord.ui.View):
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
         ticket_data = ticket_channels.get(interaction.channel.id)
         if not ticket_data:
-            await interaction.response.send_message("❌ Dies ist kein Ticket.", ephemeral=True)
+            await interaction.response.send_message("This is not a ticket.", ephemeral=True)
             return
 
-        await interaction.response.send_message("🔒 Closing ticket...")
+        await interaction.response.send_message("Closing ticket...")
         user = await bot.fetch_user(ticket_data["user_id"])
 
         closed_category = interaction.guild.get_channel(CLOSED_CATEGORY_ID)
