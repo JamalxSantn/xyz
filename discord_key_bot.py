@@ -1424,7 +1424,7 @@ class TicketSelect(discord.ui.Select):
             description=f"Hello {member.mention}, welcome to your **{type_name}** ticket.\n\nPlease describe your issue and a staff member will assist you.",
             color=TICKET_EMBED_COLOR
         )
-        embed.set_thumbnail(url=TICKET_LOGO_URL)
+        embed.set_image(url=TICKET_LOGO_URL)
         embed.set_footer(text=f"Created by {member} • Rayx Support © 2026")
 
         view = TicketButtons()
