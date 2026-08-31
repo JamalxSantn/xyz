@@ -1851,8 +1851,17 @@ async def ticket(ctx):
     if ctx.channel.id != TICKET_CHANNEL_ID:
         await ctx.send("This command is only available in the ticket channel.", delete_after=5)
         return
-    embed = discord.Embed(color=TICKET_EMBED_COLOR)
+    embed = discord.Embed(
+        title="RAYX Support",
+        description=(
+            "Select the desk that matches your request — we'll get back to you shortly.\n\n"
+            "🖥️ **Kernel** — Buying, drivers & bypass\n"
+            "🎧 **Support** — General help & questions"
+        ),
+        color=TICKET_EMBED_COLOR
+    )
     embed.set_image(url=TICKET_BANNER_URL)
+    embed.set_footer(text="Rayx Support • Private & secure")
     await ctx.send(embed=embed, view=TicketView())
 
 @bot.event
