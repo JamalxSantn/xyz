@@ -41,6 +41,7 @@ TICKET_BANNER_URL = "https://raw.githubusercontent.com/JamalxSantn/xyz/main/bann
 ADVANCED_CATEGORY_ID = 1472321807603335208
 SUPPORT_CATEGORY_ID = 1487794310022959205
 CLOSED_CATEGORY_ID = 1472321805174706238
+TICKET_STAFF_ROLE_ID = 1472321748358660259
 ticket_channels = {}
 ticket_messages = {}
 
@@ -1714,11 +1715,17 @@ class TicketSelect(discord.ui.Select):
             await interaction.response.send_message(f"❌ Du hast bereits ein Ticket: {existing.mention}", ephemeral=True)
             return
 
+        staff_role = guild.get_role(TICKET_STAFF_ROLE_ID)
         overwrites = {
             guild.default_role: discord.PermissionOverwrite(view_channel=False),
             member: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True),
             guild.me: discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_channels=True)
         }
+        if staff_role:
+            overwrites[staff_role] = discord.PermissionOverwrite(
+                view_channel=True, send_messages=True, read_message_history=True,
+                manage_messages=True
+            )
 
         category_id = ADVANCED_CATEGORY_ID if self.values[0] == "advanced_phone" else SUPPORT_CATEGORY_ID
         category = guild.get_channel(category_id)
