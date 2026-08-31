@@ -36,7 +36,7 @@ TICKET_GUILD_ID = 1472228342118879370
 TICKET_CHANNEL_ID = 1472321913828147421
 TICKET_LOG_CHANNEL_ID = 1487068508935426238
 TICKET_EMBED_COLOR = 0x000000
-TICKET_LOGO_URL = "https://media.discordapp.net/attachments/1530255097450336347/1538835234831859733/rayxbypass.png?ex=6a84c83e&is=6a8376be&hm=e49e620dc9563764c1a412cca5ad78e5f58c0b34cda1b9250894ce246bb54ee9&=&format=webp&quality=lossless"
+TICKET_LOGO_URL = "https://cdn.discordapp.com/attachments/1538307572908556442/1543804149487902750/n69nxdk.png?ex=6a963327&is=6a94e1a7&hm=3b23036d46b75e2a0ab04cdd5ccae65917ebe088bf96cf9dfadd463ba04d5ef5&"
 TICKET_BANNER_URL = "https://raw.githubusercontent.com/JamalxSantn/xyz/main/banner.png"
 ADVANCED_CATEGORY_ID = 1472321807603335208
 SUPPORT_CATEGORY_ID = 1487794310022959205
@@ -1294,27 +1294,31 @@ async def menu(ctx):
     
     if is_admin:
         embed = discord.Embed(
-            title="🔐 Key Verwaltung",
+            title="Key Verwaltung",
+            description="Alle Key-Funktionen auf einen Blick. Wähle unten eine Aktion.",
             color=0x000000
         )
-        embed.add_field(name="📦 Key erstellen", value="> Erstelle einen neuen Key", inline=True)
-        embed.add_field(name="🎫 Key einlösen", value="> Löse einen Key ein", inline=True)
-        embed.add_field(name="🔍 Key prüfen", value="> Prüfe einen Key", inline=True)
-        embed.add_field(name="🗑️ Key löschen", value="> Lösche einen Key", inline=True)
-        embed.add_field(name="⏰ Zeit hinzufügen", value="> Füge Zeit zu einem Key hinzu", inline=True)
-        embed.add_field(name="📋 Alle Keys", value="> Zeige alle Keys", inline=True)
-        embed.add_field(name="🔄 HWID Reset", value="> Setzt HWID zurück", inline=True)
-        embed.add_field(name="🔁 Neustarten", value="> Bot neu starten", inline=True)
-        embed.add_field(name="🔓 Unlock Channel", value="> Entsperrt Channel", inline=True)
+        embed.set_thumbnail(url=TICKET_LOGO_URL)
+        embed.add_field(name="Key erstellen", value="> Erstelle einen neuen Key", inline=True)
+        embed.add_field(name="Key einlösen", value="> Löse einen Key ein", inline=True)
+        embed.add_field(name="Key prüfen", value="> Prüfe einen Key", inline=True)
+        embed.add_field(name="Key löschen", value="> Lösche einen Key", inline=True)
+        embed.add_field(name="Zeit hinzufügen", value="> Füge Zeit zu einem Key hinzu", inline=True)
+        embed.add_field(name="Alle Keys", value="> Zeige alle Keys", inline=True)
+        embed.add_field(name="HWID Reset", value="> Setzt HWID zurück", inline=True)
+        embed.add_field(name="Neustarten", value="> Bot neu starten", inline=True)
+        embed.add_field(name="Unlock Channel", value="> Entsperrt Channel", inline=True)
         embed.set_footer(text="F I STEINKE C++ MEISTER")
         await ctx.send(embed=embed, view=AdminMenuView())
     else:
         embed = discord.Embed(
-            title="🔐 Key Verwaltung",
+            title="Key Verwaltung",
+            description="Wähle unten eine Aktion.",
             color=0x000000
         )
-        embed.add_field(name="🎫 Key einlösen", value="> Löse einen Key ein", inline=True)
-        embed.add_field(name="🔍 Key prüfen", value="> Prüfe einen Key", inline=True)
+        embed.set_thumbnail(url=TICKET_LOGO_URL)
+        embed.add_field(name="Key einlösen", value="> Löse einen Key ein", inline=True)
+        embed.add_field(name="Key prüfen", value="> Prüfe einen Key", inline=True)
         embed.set_footer(text="F I STEINKE C++ MEISTER")
         await ctx.send(embed=embed, view=UserMenuView())
 
@@ -1478,18 +1482,19 @@ async def post_key_embed_start():
                 await channel.purge(check=lambda m: m.embeds and m.embeds[0].title and "Key Verwaltung" in m.embeds[0].title)
                 
                 key_embed = discord.Embed(
-                    title="🔐 Key Verwaltung",
+                    title="Key Verwaltung",
+                    description="Alle Key-Funktionen auf einen Blick. Wähle unten eine Aktion.",
                     color=0x000000
                 )
-                key_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1475174657488322582/1492708596839088180/bypass_logo.png")
-                key_embed.add_field(name="📦 Erstellen", value="> Erstelle einen neuen Key", inline=True)
-                key_embed.add_field(name="🔍 Prüfen", value="> Prüfe einen Key", inline=True)
-                key_embed.add_field(name="🗑️ Löschen", value="> Lösche einen Key", inline=True)
-                key_embed.add_field(name="⏰ Zeit+", value="> Füge Zeit hinzu", inline=True)
-                key_embed.add_field(name="📋 Keys", value="> Zeige alle Keys", inline=True)
-                key_embed.add_field(name="🔄 HWID", value="> Setzt HWID zurück", inline=True)
-                key_embed.add_field(name="🔁 Restart", value="> Bot neu starten", inline=True)
-                key_embed.add_field(name="🔓 Unlock", value="> Entsperrt Channel", inline=True)
+                key_embed.set_thumbnail(url=TICKET_LOGO_URL)
+                key_embed.add_field(name="Erstellen", value="> Erstelle einen neuen Key", inline=True)
+                key_embed.add_field(name="Prüfen", value="> Prüfe einen Key", inline=True)
+                key_embed.add_field(name="Löschen", value="> Lösche einen Key", inline=True)
+                key_embed.add_field(name="Zeit+", value="> Füge Zeit hinzu", inline=True)
+                key_embed.add_field(name="Keys", value="> Zeige alle Keys", inline=True)
+                key_embed.add_field(name="HWID", value="> Setzt HWID zurück", inline=True)
+                key_embed.add_field(name="Restart", value="> Bot neu starten", inline=True)
+                key_embed.add_field(name="Unlock", value="> Entsperrt Channel", inline=True)
                 key_embed.set_footer(text="F I STEINKE C++ MEISTER")
                 await channel.send(embed=key_embed, view=AdminMenuView())
                 print("✅ Key Embed mit Menü beim Start gesendet!")
@@ -1508,18 +1513,19 @@ async def post_key_embed_loop():
                     await channel.purge(check=lambda m: m.embeds and m.embeds[0].title and "Key Verwaltung" in m.embeds[0].title, limit=1)
                     
                     key_embed = discord.Embed(
-                        title="🔐 Key Verwaltung",
+                        title="Key Verwaltung",
+                        description="Alle Key-Funktionen auf einen Blick. Wähle unten eine Aktion.",
                         color=0x000000
                     )
-                    key_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1475174657488322582/1492708596839088180/bypass_logo.png")
-                    key_embed.add_field(name="📦 Erstellen", value="> Erstelle einen neuen Key", inline=True)
-                    key_embed.add_field(name="🔍 Prüfen", value="> Prüfe einen Key", inline=True)
-                    key_embed.add_field(name="🗑️ Löschen", value="> Lösche einen Key", inline=True)
-                    key_embed.add_field(name="⏰ Zeit+", value="> Füge Zeit hinzu", inline=True)
-                    key_embed.add_field(name="📋 Keys", value="> Zeige alle Keys", inline=True)
-                    key_embed.add_field(name="🔄 HWID", value="> Setzt HWID zurück", inline=True)
-                    key_embed.add_field(name="🔁 Restart", value="> Bot neu starten", inline=True)
-                    key_embed.add_field(name="🔓 Unlock", value="> Entsperrt Channel", inline=True)
+                    key_embed.set_thumbnail(url=TICKET_LOGO_URL)
+                    key_embed.add_field(name="Erstellen", value="> Erstelle einen neuen Key", inline=True)
+                    key_embed.add_field(name="Prüfen", value="> Prüfe einen Key", inline=True)
+                    key_embed.add_field(name="Löschen", value="> Lösche einen Key", inline=True)
+                    key_embed.add_field(name="Zeit+", value="> Füge Zeit hinzu", inline=True)
+                    key_embed.add_field(name="Keys", value="> Zeige alle Keys", inline=True)
+                    key_embed.add_field(name="HWID", value="> Setzt HWID zurück", inline=True)
+                    key_embed.add_field(name="Restart", value="> Bot neu starten", inline=True)
+                    key_embed.add_field(name="Unlock", value="> Entsperrt Channel", inline=True)
                     key_embed.set_footer(text="F I STEINKE C++ MEISTER")
                     
                     await channel.send(embed=key_embed, view=AdminMenuView())
@@ -1734,12 +1740,12 @@ class TicketSelect(discord.ui.Select):
         ticket_messages[ticket_channel.id] = []
 
         embed = discord.Embed(
-            title=f"RAYX#1 {type_name}",
-            description=f"Hello {member.mention}, welcome to your **{type_name}** ticket.\n\nPlease describe your issue and a staff member will assist you.",
+            title=f"Ticket {type_name}",
+            description=f"Welcome {member.mention}.\n\nPlease describe your issue and a staff member will assist you shortly.",
             color=TICKET_EMBED_COLOR
         )
         embed.set_thumbnail(url=TICKET_LOGO_URL)
-        embed.set_footer(text=f"Created by {member} • Rayx Support © 2026")
+        embed.set_footer(text=f"{member} • Rayx Support © 2026")
 
         view = TicketButtons()
         await ticket_channel.send(content=f"{member.mention}", embed=embed, view=view)
@@ -1817,12 +1823,13 @@ async def ticket(ctx):
         await ctx.send("This command is only available in the ticket channel.", delete_after=5)
         return
     embed = discord.Embed(
-        title="RAYX#1",
-        description="Select an option to create a ticket.",
+        title="RAYX Support",
+        description="Please select an option below to create a ticket.\n\nOur team will get back to you as soon as possible.",
         color=TICKET_EMBED_COLOR
     )
+    embed.set_thumbnail(url=TICKET_LOGO_URL)
     embed.set_image(url=TICKET_BANNER_URL)
-    embed.set_footer(text="Rayx Bypass © 2026")
+    embed.set_footer(text="Rayx Support © 2026")
     await ctx.send(embed=embed, view=TicketView())
 
 @bot.event
