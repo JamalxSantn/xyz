@@ -1852,16 +1852,26 @@ async def ticket(ctx):
         await ctx.send("This command is only available in the ticket channel.", delete_after=5)
         return
     embed = discord.Embed(
-        title="RAYX Support",
+        title="• Rayx Bypass",
         description=(
-            "Select the desk that matches your request — we'll get back to you shortly.\n\n"
-            "🖥️ **Kernel** — Buying, drivers & bypass\n"
-            "🎧 **Support** — General help & questions"
+            "🇺🇸 **English Support**\n\n"
+            "For detailed information on pricing and terms,\n"
+            "please open a ticket and speak directly with our\n"
+            "support team.\n\n"
+            "Select **Kernel** if you wish to purchase.\n"
+            "Select **Support** if you have any questions.\n\n"
+            "🇩🇪 **Deutscher Support**\n\n"
+            "Ausführliche Informationen zu Preisen und\n"
+            "Bedingungen finden Sie, wenn Sie ein Ticket öffnen\n"
+            "und direkt mit unserem Support-Team sprechen.\n\n"
+            "Wählen Sie **Kernel**, wenn Sie kaufen möchten.\n"
+            "Wählen Sie **Support**, wenn Sie Fragen haben."
         ),
         color=TICKET_EMBED_COLOR
     )
+    embed.set_thumbnail(url=TICKET_LOGO_URL)
     embed.set_image(url=TICKET_BANNER_URL)
-    embed.set_footer(text="Rayx Support • Private & secure")
+    embed.set_footer(text="Panel sent by Rayx")
     await ctx.send(embed=embed, view=TicketView())
 
 @bot.event
