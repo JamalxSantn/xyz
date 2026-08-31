@@ -1768,46 +1768,70 @@ class TicketButtons(discord.ui.View):
 
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ticket_data = ticket_channels.get(interaction.channel.id)
-        if not ticket_data:
-            await interaction.response.send_message("This is not a ticket.", ephemeral=True)
-            return
-
-        user = await bot.fetch_user(ticket_data["user_id"])
+        channel = interaction.channel
+        ticket_data = ticket_channels.get(channel.id)
         guild = interaction.guild
 
+        # --- Robust: Ticket anhand des Channel-Namens erkennen (funktioniert auch nach Bot-Neustart) ---
+        if not ticket_data:
+            if not channel.name.startswith("ticket-") or "-closed" in channel.name:
+                await interaction.response.send_message("This is not a ticket.", ephemeral=True)
+                return
+            # Ticket-Daten aus den Channel-Berechtigungen rekonstruieren:
+            # Der einzige normale Member mit view_channel=True ist der Ticket-Ersteller.
+            user = None
+            for target, ov in channel.overwrites.items():
+                if isinstance(target, discord.Member) and ov.view_channel:
+                    user = target
+                    break
+            ticket_data = {
+                "user_id": user.id if user else None,
+                "type": "Kernel" if channel.category and channel.category.id == ADVANCED_CATEGORY_ID else "Support",
+                "created_at": datetime.now().isoformat(),
+            }
+            if user is None:
+                await interaction.response.send_message("Could not determine the ticket owner.", ephemeral=True)
+                return
+
+        if ticket_data.get("user_id"):
+            user = await bot.fetch_user(ticket_data["user_id"])
+        else:
+            user = None
+
         # --- Channel umbenennen: ticket-username -> ticket-username-closed ---
-        old_name = interaction.channel.name
+        old_name = channel.name
         new_name = f"{old_name}-closed"
-        await interaction.channel.edit(name=new_name)
+        await channel.edit(name=new_name)
 
         # Kategorie auf "closed" setzen
         closed_category = guild.get_channel(CLOSED_CATEGORY_ID)
         if closed_category:
-            await interaction.channel.edit(category=closed_category)
+            await channel.edit(category=closed_category)
 
         # Berechtigungen anpassen
-        overwrite = interaction.channel.overwrites_for(guild.default_role)
+        overwrite = channel.overwrites_for(guild.default_role)
         overwrite.view_channel = False
-        await interaction.channel.set_permissions(guild.default_role, overwrite=overwrite)
-        await interaction.channel.set_permissions(user, view_channel=False)
+        await channel.set_permissions(guild.default_role, overwrite=overwrite)
+        if user:
+            await channel.set_permissions(user, view_channel=False)
 
         # WICHTIGEN EINTRIAG AUS ticket_channels LÖSCHEN (ermöglicht neues Ticket)
-        ticket_channels.pop(interaction.channel.id, None)
+        ticket_channels.pop(channel.id, None)
         save_ticket_data()
 
+        created_by = user if user else "Unbekannt"
         embed = discord.Embed(
             title="Ticket Closed",
-            description=f"**Ticket has been closed:**\n> Closed by: {interaction.user}\n> Created by: {user}\n> Type: {ticket_data['type']}",
+            description=f"**Ticket has been closed:**\n> Closed by: {interaction.user}\n> Created by: {created_by}\n> Type: {ticket_data['type']}",
             color=0xff0000
         )
         embed.set_footer(text="Rayx Support © 2026")
-        await interaction.channel.send(embed=embed)
-        await send_ticket_log(f"**Ticket closed**\n> By: {interaction.user}\n> Ticket: {interaction.channel.mention}\n> Created by: {user}\n> Type: {ticket_data['type']}")
+        await channel.send(embed=embed)
+        await send_ticket_log(f"**Ticket closed**\n> By: {interaction.user}\n> Ticket: {channel.mention}\n> Created by: {created_by}\n> Type: {ticket_data['type']}")
 
         delete_view = discord.ui.View(timeout=None)
         delete_view.add_item(discord.ui.Button(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket_closed"))
-        await interaction.channel.send(view=delete_view)
+        await channel.send(view=delete_view)
 
 class DeleteTicketView(discord.ui.View):
     def __init__(self):
