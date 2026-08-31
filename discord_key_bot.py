@@ -1193,7 +1193,7 @@ def build_bot_status_embed():
     embed = discord.Embed(title="RAYX Status", color=0x000000, timestamp=datetime.now())
     embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1475174657488322582/1492708596839088180/bypass_logo.png")
 
-    bot_status = f"✅ Online als {bot.user}"
+    bot_status = f"Online als {bot.user}"
     embed.add_field(name="Bot", value=bot_status, inline=False)
 
     latency = round(bot.latency * 1000)
