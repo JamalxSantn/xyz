@@ -1854,10 +1854,10 @@ async def ticket(ctx):
     embed = discord.Embed(
         title="Rayx Support",
         description=(
-            "🇺🇸 **English Support**\n\n"
-            "Need help then open a ticket and our staff will get back to you\n\n"
-            "🇩🇪 **Deutscher Support**\n\n"
-            "Brauchst du Hilfe dann eröffne ein ticket und unsere staffs melden sich"
+            "🇺🇸 **English**\n\n"
+            "Need help or want to buy a plan open a ticket and our staff will get back to you!\n\n"
+            "🇩🇪 **Deutsch**\n\n"
+            "Brauchst du Hilfe oder möchtes einen plan kaufen eröffne ein ticket und unsere staffs melden sich!"
         ),
         color=TICKET_EMBED_COLOR
     )
