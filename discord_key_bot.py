@@ -37,7 +37,7 @@ TICKET_CHANNEL_ID = 1472321913828147421
 TICKET_LOG_CHANNEL_ID = 1487068508935426238
 TICKET_EMBED_COLOR = 0x000000
 TICKET_LOGO_URL = "https://cdn.discordapp.com/attachments/1538307572908556442/1543804149487902750/n69nxdk.png?ex=6a963327&is=6a94e1a7&hm=3b23036d46b75e2a0ab04cdd5ccae65917ebe088bf96cf9dfadd463ba04d5ef5&"
-TICKET_BANNER_URL = "https://raw.githubusercontent.com/JamalxSantn/xyz/main/banner.png"
+TICKET_BANNER_URL = "https://cdn.discordapp.com/attachments/1542513641646202982/1543835735784816783/3vjf40w.png?ex=6a965092&is=6a94ff12&hm=fb85743a7fd072a4142b288b55e5cf06584a44fc7d4e2b5e0cab8bf3fe98352f&"
 ADVANCED_CATEGORY_ID = 1472321807603335208
 SUPPORT_CATEGORY_ID = 1487794310022959205
 CLOSED_CATEGORY_ID = 1472321805174706238
@@ -1852,26 +1852,23 @@ async def ticket(ctx):
         await ctx.send("This command is only available in the ticket channel.", delete_after=5)
         return
     embed = discord.Embed(
-        title="• Rayx Bypass",
+        title="Rayx Support",
         description=(
             "🇺🇸 **English Support**\n\n"
-            "For detailed information on pricing and terms,\n"
-            "please open a ticket and speak directly with our\n"
-            "support team.\n\n"
-            "Select **Kernel** if you wish to purchase.\n"
-            "Select **Support** if you have any questions.\n\n"
+            "Need help with pricing, plans or activation?\n"
+            "Open a ticket and talk directly to our support team.\n\n"
+            "Select **Kernel** to purchase.\n"
+            "Select **Support** for any questions.\n\n"
             "🇩🇪 **Deutscher Support**\n\n"
-            "Ausführliche Informationen zu Preisen und\n"
-            "Bedingungen finden Sie, wenn Sie ein Ticket öffnen\n"
-            "und direkt mit unserem Support-Team sprechen.\n\n"
-            "Wählen Sie **Kernel**, wenn Sie kaufen möchten.\n"
-            "Wählen Sie **Support**, wenn Sie Fragen haben."
+            "Brauchst du Hilfe zu Preisen, Plänen oder Aktivierung?\n"
+            "Öffne ein Ticket und sprich direkt mit unserem Team.\n\n"
+            "Wähle **Kernel** zum Kaufen.\n"
+            "Wähle **Support** bei Fragen."
         ),
         color=TICKET_EMBED_COLOR
     )
-    embed.set_thumbnail(url=TICKET_LOGO_URL)
     embed.set_image(url=TICKET_BANNER_URL)
-    embed.set_footer(text="Panel sent by Rayx")
+    embed.set_footer(text="Rayx Support © 2026")
     await ctx.send(embed=embed, view=TicketView())
 
 @bot.event
