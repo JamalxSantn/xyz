@@ -25,6 +25,9 @@ BOT_LOG_CHANNEL_ID = 1538307572908556442
 LOADER_LOG_CHANNEL_ID = 1539797066924957809
 USER_CHECK_CHANNEL_ID = 1539925997766578267
 KEYS_OVERVIEW_CHANNEL_ID = 1543799035327156284
+BOT_STATUS_CHANNEL_ID = 1539243946373550111
+
+BOT_START_TIME = datetime.now()
 GUILD_ID = 1537561860163768412
 MASTER_ID = "1027571297514967140"
 
@@ -1152,6 +1155,91 @@ async def post_keys_overview_loop():
             print(f"Key Übersicht loop error: {e}")
             await asyncio.sleep(10)
 
+def format_uptime(start_time):
+    delta = datetime.now() - start_time
+    seconds = int(delta.total_seconds())
+    days = seconds // 86400
+    hours = (seconds % 86400) // 3600
+    minutes = (seconds % 3600) // 60
+    secs = seconds % 60
+    return f"{days}d {hours}h {minutes}m {secs}s"
+
+def check_api_status():
+    try:
+        import time
+        start = time.time()
+        req = urllib.request.Request("http://127.0.0.1:5000/", method="GET")
+        resp = urllib.request.urlopen(req, timeout=5)
+        ms = int((time.time() - start) * 1000)
+        return f"Online - HTTP {resp.status}, {ms} ms"
+    except urllib.error.HTTPError as e:
+        return f"Online - HTTP {e.code}"
+    except Exception as e:
+        return f"Offline - {e}"
+
+def build_bot_status_embed():
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    c.execute("SELECT COUNT(*) FROM keys")
+    total_keys = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM keys WHERE used = 1")
+    used_keys = c.fetchone()[0]
+    c.execute("SELECT COUNT(DISTINCT hwid) FROM keys WHERE hwid IS NOT NULL AND hwid != ''")
+    hwids = c.fetchone()[0]
+    c.execute("SELECT COUNT(*) FROM whitelist")
+    wl_count = c.fetchone()[0]
+    conn.close()
+
+    embed = discord.Embed(title="RAYX Status", color=0x000000, timestamp=datetime.now())
+    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1475174657488322582/1492708596839088180/bypass_logo.png")
+
+    bot_status = f"✅ Online als {bot.user}"
+    embed.add_field(name="Bot", value=bot_status, inline=False)
+
+    latency = round(bot.latency * 1000)
+    embed.add_field(name="Latency", value=f"{latency} ms", inline=True)
+
+    embed.add_field(name="Guilds", value=f"{len(bot.guilds)}", inline=True)
+
+    embed.add_field(name="Uptime", value=format_uptime(BOT_START_TIME), inline=True)
+
+    embed.add_field(name="API", value=check_api_status(), inline=False)
+
+    embed.add_field(name="Statistiken", value=f"Keys gesamt: {total_keys}\nVerwendet: {used_keys}\nRegistrierte HWIDs: {hwids}\nWhitelist: {wl_count}", inline=False)
+
+    embed.set_footer(text="F I STEINKE C++ MEISTER · aktualisiert alle 10 Minuten")
+    return embed
+
+async def post_bot_status_start():
+    try:
+        guild = bot.get_guild(GUILD_ID)
+        if guild:
+            channel = guild.get_channel(BOT_STATUS_CHANNEL_ID)
+            if channel:
+                await channel.purge(check=lambda m: m.embeds and m.embeds[0].title and "RAYX Status" in m.embeds[0].title)
+                embed = build_bot_status_embed()
+                await channel.send(embed=embed)
+                print("✅ RAYX Status Embed gesendet!")
+    except Exception as e:
+        print(f"RAYX Status start error: {e}")
+
+async def post_bot_status_loop():
+    while True:
+        await asyncio.sleep(600)
+        try:
+            guild = bot.get_guild(GUILD_ID)
+            if guild:
+                channel = guild.get_channel(BOT_STATUS_CHANNEL_ID)
+                if channel:
+                    await asyncio.sleep(2)
+                    await channel.purge(check=lambda m: m.embeds and m.embeds[0].title and "RAYX Status" in m.embeds[0].title, limit=1)
+                    embed = build_bot_status_embed()
+                    await channel.send(embed=embed)
+                    print("✅ RAYX Status Embed aktualisiert!")
+        except Exception as e:
+            print(f"RAYX Status loop error: {e}")
+            await asyncio.sleep(10)
+
 LOAD_CHANNEL_ID = 1538307572908556442
 LOAD_URL = os.environ.get("LOAD_URL", "http://192.168.178.72:5000")
 CHEAT_EXE = os.environ.get("CHEAT_EXE", "")
@@ -1374,9 +1462,11 @@ async def on_ready():
     await post_whitelist_embed_start()
     await post_user_check_embed_start()
     await post_keys_overview_start()
+    await post_bot_status_start()
     bot.loop.create_task(post_key_embed_loop())
     bot.loop.create_task(post_whitelist_embed_loop())
     bot.loop.create_task(post_keys_overview_loop())
+    bot.loop.create_task(post_bot_status_loop())
     bot.loop.create_task(purge_channel_task())
 
 async def post_key_embed_start():
