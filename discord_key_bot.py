@@ -24,6 +24,7 @@ LOG_CHANNEL_ID = 1538307572908556442
 BOT_LOG_CHANNEL_ID = 1538307572908556442
 LOADER_LOG_CHANNEL_ID = 1539797066924957809
 USER_CHECK_CHANNEL_ID = 1539925997766578267
+KEYS_OVERVIEW_CHANNEL_ID = 1543799035327156284
 GUILD_ID = 1537561860163768412
 MASTER_ID = "1027571297514967140"
 
@@ -1070,6 +1071,87 @@ async def post_user_check_embed_start():
     except Exception as e:
         print(f"User Check Embed error: {e}")
 
+def build_keys_overview_embed():
+    conn = sqlite3.connect(DATABASE)
+    c = conn.cursor()
+    c.execute("SELECT * FROM keys ORDER BY created_at DESC")
+    rows = c.fetchall()
+    conn.close()
+
+    embed = discord.Embed(
+        title="📋 Key Übersicht",
+        color=0x000000,
+        timestamp=datetime.now()
+    )
+    embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1475174657488322582/1492708596839088180/bypass_logo.png")
+
+    if not rows:
+        embed.description = "> Keine Keys vorhanden."
+        embed.set_footer(text="F I STEINKE C++ MEISTER")
+        return [embed]
+
+    used_count = sum(1 for r in rows if r[7])
+    free_count = len(rows) - used_count
+
+    embed.description = f"> **Gesamt:** {len(rows)}\n> **Benutzt:** {used_count}\n> **Frei:** {free_count}"
+
+    embeds = [embed]
+    field_count = 0
+    for row in rows:
+        key, hwid, discord_id, created_at, expires_at, duration_type, duration_value, used = row
+
+        status = "🟢 Benutzt" if used else "⚪ Unbenutzt"
+        time_left = time_remaining(expires_at)
+        user_str = f"<@{discord_id}>" if discord_id and discord_id.isdigit() else "N/A"
+
+        value = f"**Status:** {status}\n**Zeit:** {time_left}\n**Discord:** {user_str}"
+
+        if field_count >= 25:
+            embeds.append(discord.Embed(title="📋 Key Übersicht", color=0x000000))
+            field_count = 0
+
+        embeds[-1].add_field(name=f"`{key}`", value=value, inline=False)
+        field_count += 1
+
+    for i, e in enumerate(embeds):
+        e.set_footer(text=f"F I STEINKE C++ MEISTER")
+        if i > 0:
+            e.set_thumbnail(url="https://cdn.discordapp.com/attachments/1475174657488322582/1492708596839088180/bypass_logo.png")
+
+    return embeds
+
+async def post_keys_overview_start():
+    try:
+        guild = bot.get_guild(GUILD_ID)
+        if guild:
+            channel = guild.get_channel(KEYS_OVERVIEW_CHANNEL_ID)
+            if channel:
+                await channel.purge(check=lambda m: m.embeds and m.embeds[0].title and "Key Übersicht" in m.embeds[0].title)
+                embeds = build_keys_overview_embed()
+                for e in embeds:
+                    await channel.send(embed=e)
+                print("✅ Key Übersicht gesendet!")
+    except Exception as e:
+        print(f"Key Übersicht error: {e}")
+
+async def post_keys_overview_loop():
+    while True:
+        await asyncio.sleep(600)
+        try:
+            guild = bot.get_guild(GUILD_ID)
+            if guild:
+                channel = guild.get_channel(KEYS_OVERVIEW_CHANNEL_ID)
+                if channel:
+                    await asyncio.sleep(2)
+                    await channel.purge(check=lambda m: m.embeds and m.embeds[0].title and "Key Übersicht" in m.embeds[0].title, limit=1)
+                    embeds = build_keys_overview_embed()
+                    for e in embeds:
+                        await channel.send(embed=e)
+                    print("✅ Key Übersicht aktualisiert!")
+        except Exception as e:
+            print(f"Key Übersicht loop error: {e}")
+            await asyncio.sleep(10)
+
 LOAD_CHANNEL_ID = 1538307572908556442
 LOAD_URL = os.environ.get("LOAD_URL", "http://192.168.178.72:5000")
 CHEAT_EXE = os.environ.get("CHEAT_EXE", "")
@@ -1291,8 +1373,10 @@ async def on_ready():
     await post_key_embed_start()
     await post_whitelist_embed_start()
     await post_user_check_embed_start()
+    await post_keys_overview_start()
     bot.loop.create_task(post_key_embed_loop())
     bot.loop.create_task(post_whitelist_embed_loop())
+    bot.loop.create_task(post_keys_overview_loop())
     bot.loop.create_task(purge_channel_task())
 
 async def post_key_embed_start():
