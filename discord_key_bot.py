@@ -1855,15 +1855,9 @@ async def ticket(ctx):
         title="Rayx Support",
         description=(
             "🇺🇸 **English Support**\n\n"
-            "Need help with pricing, plans or activation?\n"
-            "Open a ticket and talk directly to our support team.\n\n"
-            "Select **Kernel** to purchase.\n"
-            "Select **Support** for any questions.\n\n"
+            "Need help then open a ticket and our staff will get back to you\n\n"
             "🇩🇪 **Deutscher Support**\n\n"
-            "Brauchst du Hilfe zu Preisen, Plänen oder Aktivierung?\n"
-            "Öffne ein Ticket und sprich direkt mit unserem Team.\n\n"
-            "Wähle **Kernel** zum Kaufen.\n"
-            "Wähle **Support** bei Fragen."
+            "Brauchst du Hilfe dann eröffne ein ticket und unsere staffs melden sich"
         ),
         color=TICKET_EMBED_COLOR
     )
