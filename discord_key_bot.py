@@ -22,7 +22,8 @@ PURGE_CHANNEL_ID = 1537561862361849989
 WHITELIST_CHANNEL_ID = 1538336311365214218
 LOG_CHANNEL_ID = 1538307572908556442
 BOT_LOG_CHANNEL_ID = 1538307572908556442
-LOADER_LOG_CHANNEL_ID = 1538307572908556442
+LOADER_LOG_CHANNEL_ID = 1539797066924957809
+USER_CHECK_CHANNEL_ID = 1539925997766578267
 GUILD_ID = 1537561860163768412
 MASTER_ID = "1027571297514967140"
 
@@ -133,6 +134,12 @@ def init_db():
         discord_id TEXT PRIMARY KEY,
         added_at TEXT
     )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS key_meta (
+        key TEXT PRIMARY KEY,
+        created_by TEXT,
+        login_count INTEGER DEFAULT 0,
+        last_login TEXT
+    )""")
     c.execute("SELECT COUNT(*) FROM whitelist")
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO whitelist (discord_id, added_at) VALUES (?, ?)", (MASTER_ID, datetime.now().isoformat()))
@@ -218,6 +225,10 @@ def api_auth():
         send_key_log_sync("Key Eingelöst (Loader)", f"Key: `{password}`\nHWID: {hwid}\nDiscord ID: {username}", 0x00ff00)
         sync_db_to_gist()
     
+    c.execute("INSERT OR IGNORE INTO key_meta (key) VALUES (?)", (password,))
+    c.execute("UPDATE key_meta SET login_count = login_count + 1, last_login = ? WHERE key = ?",
+              (datetime.now().isoformat(), password))
+    conn.commit()
     conn.close()
     
     expiry_str = time_remaining(expires_at)
@@ -502,6 +513,7 @@ async def createkey(ctx, duration_value: int, duration_type: str):
     c.execute("""INSERT INTO keys (key, created_at, expires_at, duration_type, duration_value) 
                  VALUES (?, ?, ?, ?, ?)""",
               (key, created_at, expires_at, duration_type.lower(), duration_value))
+    c.execute("INSERT INTO key_meta (key, created_by) VALUES (?, ?)", (key, str(ctx.author.id)))
     conn.commit()
     sync_db_to_gist()
     conn.close()
@@ -529,6 +541,7 @@ async def deletekey(ctx, *, key: str):
             conn.close()
             return
         c.execute("DELETE FROM keys")
+        c.execute("DELETE FROM key_meta")
         conn.commit()
         sync_db_to_gist()
         conn.close()
@@ -548,6 +561,7 @@ async def deletekey(ctx, *, key: str):
     hwid_info = f" HWID: {hwid}" if hwid else ""
     
     c.execute("DELETE FROM keys WHERE key = ?", (key,))
+    c.execute("DELETE FROM key_meta WHERE key = ?", (key,))
     conn.commit()
     sync_db_to_gist()
     conn.close()
@@ -672,7 +686,7 @@ async def clear(ctx):
     """Löscht alle Nachrichten und macht Channel read-only für User"""
     await ctx.channel.purge(limit=None)
     await ctx.channel.set_permissions(ctx.guild.default_role, send_messages=False, add_reactions=False)
-    await ctx.send("✅ Channel geleert! Nur noch der Bot kann schreiben.", delete_after=5)
+    await ctx.send("clean!", delete_after=5)
 
 @bot.command()
 @commands.has_permissions(administrator=True)
@@ -728,6 +742,7 @@ class KeyModal(discord.ui.Modal):
                 
                 c.execute("""INSERT INTO keys (key, created_at, expires_at, duration_type, duration_value) VALUES (?, ?, ?, ?, ?)""",
                          (key, created_at, expires_at, time_type, amount))
+                c.execute("INSERT INTO key_meta (key, created_by) VALUES (?, ?)", (key, str(interaction.user.id)))
                 conn.commit()
                 sync_db_to_gist()
                 
@@ -808,6 +823,7 @@ class KeyModal(discord.ui.Modal):
             hwid_info = f" HWID: {hwid}" if hwid else ""
             
             c.execute("DELETE FROM keys WHERE key = ?", (key,))
+            c.execute("DELETE FROM key_meta WHERE key = ?", (key,))
             conn.commit()
             sync_db_to_gist()
             conn.close()
@@ -933,12 +949,6 @@ class AdminMenuView(discord.ui.View):
         subprocess.Popen([sys.executable, os.path.abspath(__file__)])
         await bot.close()
 
-    @discord.ui.button(label="Clear", style=discord.ButtonStyle.grey, custom_id="admin_clear", emoji="🧹")
-    async def clear_channel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.channel.purge(limit=None)
-        await interaction.response.send_message("Channel geleert!", delete_after=5, ephemeral=True)
-        await send_bot_log("Channel Geleert", f"User: {interaction.user}\nChannel: {interaction.channel.name}")
-
     @discord.ui.button(label="Unlock", style=discord.ButtonStyle.grey, custom_id="admin_unlock", emoji="🔓")
     async def unlock_channel_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.channel.set_permissions(interaction.guild.default_role, send_messages=None, add_reactions=None)
@@ -962,6 +972,103 @@ class UserMenuView(discord.ui.View):
             await interaction.response.send_message("Kein Zugriff", ephemeral=True)
             return
         await interaction.response.send_modal(KeyModal("Key prüfen"))
+
+class UserCheckModal(discord.ui.Modal):
+    def __init__(self):
+        super().__init__(title="User Prüfen")
+        self.user_id_input = discord.ui.TextInput(label="Discord ID", placeholder="z.B. 1027571297514967140")
+        self.add_item(self.user_id_input)
+
+    async def on_submit(self, interaction: discord.Interaction):
+        if not is_whitelisted(interaction.user.id):
+            await interaction.response.send_message("Kein Zugriff", ephemeral=True)
+            return
+
+        uid = self.user_id_input.value.strip()
+
+        try:
+            user = await bot.fetch_user(int(uid))
+            username = f"{user.name}"
+        except:
+            username = "Unbekannt"
+
+        conn = sqlite3.connect(DATABASE)
+        c = conn.cursor()
+        c.execute("SELECT key, hwid, created_at, expires_at, used FROM keys WHERE discord_id = ?", (uid,))
+        rows = c.fetchall()
+
+        if not rows:
+            conn.close()
+            await interaction.response.send_message(f"Zu Discord ID `{uid}` wurde kein Key gefunden.", ephemeral=True)
+            return
+
+        embed = discord.Embed(title=f"User Prüfen - {username}", color=0x000000)
+        embed.add_field(name="Discord ID", value=f"`{uid}`", inline=True)
+
+        for key, hwid, created_at, expires_at, used in rows:
+            c.execute("SELECT created_by, login_count, last_login FROM key_meta WHERE key = ?", (key,))
+            meta = c.fetchone()
+            created_by = meta[0] if meta and meta[0] else "Unbekannt"
+            login_count = meta[1] if meta else 0
+            last_login = meta[2] if meta and meta[2] else "Nie"
+
+            try:
+                created_by_user = await bot.fetch_user(int(created_by))
+                created_by_name = f"{created_by_user.name}"
+            except:
+                created_by_name = created_by
+
+            created_dt = datetime.fromisoformat(created_at)
+            created_str = created_dt.strftime("%d.%m.%Y, %H:%M Uhr")
+
+            expires_dt = datetime.fromisoformat(expires_at)
+            if expires_dt.year == 9999:
+                expires_str = "Lifetime"
+            else:
+                expires_str = expires_dt.strftime("%d.%m.%Y, %H:%M Uhr")
+
+            status = "Eingelöst" if used else "Unbenutzt"
+            hwid_str = hwid if hwid else "Nicht gesetzt"
+
+            embed.add_field(
+                name=f"Key: {key}",
+                value=f"**Status:** {status}\n**HWID:** `{hwid_str}`\n**Erstellt:** {created_str}\n**Erstellt von:** {created_by_name}\n**Ablauf:** {expires_str}\n**Logins im Loader:** {login_count}\n**Letzter Login:** {last_login}",
+                inline=False
+            )
+
+        conn.close()
+        await interaction.response.send_message(embed=embed, ephemeral=True)
+
+class UserCheckView(discord.ui.View):
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(label="User Prüfen", style=discord.ButtonStyle.grey, custom_id="user_check_open", emoji="🔍")
+    async def open_check_btn(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not is_whitelisted(interaction.user.id):
+            await interaction.response.send_message("Kein Zugriff", ephemeral=True)
+            return
+        await interaction.response.send_modal(UserCheckModal())
+
+async def post_user_check_embed_start():
+    try:
+        guild = bot.get_guild(GUILD_ID)
+        if guild:
+            channel = guild.get_channel(USER_CHECK_CHANNEL_ID)
+            if channel:
+                await channel.purge(check=lambda m: m.embeds and m.embeds[0].title and "User Prüfen" in m.embeds[0].title)
+                
+                user_check_embed = discord.Embed(
+                    title="🔍 User Prüfen",
+                    color=0x000000
+                )
+                user_check_embed.set_thumbnail(url="https://cdn.discordapp.com/attachments/1475174657488322582/1492708596839088180/bypass_logo.png")
+                user_check_embed.add_field(name="Was du sehen kannst", value="> Gib eine Discord ID ein und erhalte:\n> Key, HWID, Erstellt von/wann, Ablauf, Logins im Loader", inline=False)
+                user_check_embed.set_footer(text="F I STEINKE C++ MEISTER")
+                await channel.send(embed=user_check_embed, view=UserCheckView())
+                print("✅ User Check Embed gesendet!")
+    except Exception as e:
+        print(f"User Check Embed error: {e}")
 
 LOAD_CHANNEL_ID = 1538307572908556442
 LOAD_URL = os.environ.get("LOAD_URL", "http://192.168.178.72:5000")
@@ -1028,7 +1135,6 @@ async def menu(ctx):
         embed.add_field(name="📋 Alle Keys", value="> Zeige alle Keys", inline=True)
         embed.add_field(name="🔄 HWID Reset", value="> Setzt HWID zurück", inline=True)
         embed.add_field(name="🔁 Neustarten", value="> Bot neu starten", inline=True)
-        embed.add_field(name="🧹 Clear Channel", value="> Löscht Nachrichten", inline=True)
         embed.add_field(name="🔓 Unlock Channel", value="> Entsperrt Channel", inline=True)
         embed.set_footer(text="F I STEINKE C++ MEISTER")
         await ctx.send(embed=embed, view=AdminMenuView())
@@ -1174,6 +1280,7 @@ async def on_ready():
     load_ticket_data()
     bot.add_view(AdminMenuView())
     bot.add_view(UserMenuView())
+    bot.add_view(UserCheckView())
     bot.add_view(WhitelistMenuView())
     bot.add_view(TicketView())
     bot.add_view(TicketButtons())
@@ -1183,6 +1290,7 @@ async def on_ready():
     print("API Server gestartet auf http://0.0.0.0:5000")
     await post_key_embed_start()
     await post_whitelist_embed_start()
+    await post_user_check_embed_start()
     bot.loop.create_task(post_key_embed_loop())
     bot.loop.create_task(post_whitelist_embed_loop())
     bot.loop.create_task(purge_channel_task())
@@ -1207,7 +1315,6 @@ async def post_key_embed_start():
                 key_embed.add_field(name="📋 Keys", value="> Zeige alle Keys", inline=True)
                 key_embed.add_field(name="🔄 HWID", value="> Setzt HWID zurück", inline=True)
                 key_embed.add_field(name="🔁 Restart", value="> Bot neu starten", inline=True)
-                key_embed.add_field(name="🧹 Clear", value="> Löscht Nachrichten", inline=True)
                 key_embed.add_field(name="🔓 Unlock", value="> Entsperrt Channel", inline=True)
                 key_embed.set_footer(text="F I STEINKE C++ MEISTER")
                 await channel.send(embed=key_embed, view=AdminMenuView())
@@ -1238,7 +1345,6 @@ async def post_key_embed_loop():
                     key_embed.add_field(name="📋 Keys", value="> Zeige alle Keys", inline=True)
                     key_embed.add_field(name="🔄 HWID", value="> Setzt HWID zurück", inline=True)
                     key_embed.add_field(name="🔁 Restart", value="> Bot neu starten", inline=True)
-                    key_embed.add_field(name="🧹 Clear", value="> Löscht Nachrichten", inline=True)
                     key_embed.add_field(name="🔓 Unlock", value="> Entsperrt Channel", inline=True)
                     key_embed.set_footer(text="F I STEINKE C++ MEISTER")
                     
@@ -1482,17 +1588,28 @@ class TicketButtons(discord.ui.View):
             await interaction.response.send_message("This is not a ticket.", ephemeral=True)
             return
 
-        await interaction.response.send_message("Closing ticket...")
         user = await bot.fetch_user(ticket_data["user_id"])
+        guild = interaction.guild
 
-        closed_category = interaction.guild.get_channel(CLOSED_CATEGORY_ID)
+        # --- Channel umbenennen: ticket-username -> ticket-username-closed ---
+        old_name = interaction.channel.name
+        new_name = f"{old_name}-closed"
+        await interaction.channel.edit(name=new_name)
+
+        # Kategorie auf "closed" setzen
+        closed_category = guild.get_channel(CLOSED_CATEGORY_ID)
         if closed_category:
             await interaction.channel.edit(category=closed_category)
 
-        overwrite = interaction.channel.overwrites_for(interaction.guild.default_role)
+        # Berechtigungen anpassen
+        overwrite = interaction.channel.overwrites_for(guild.default_role)
         overwrite.view_channel = False
-        await interaction.channel.set_permissions(interaction.guild.default_role, overwrite=overwrite)
+        await interaction.channel.set_permissions(guild.default_role, overwrite=overwrite)
         await interaction.channel.set_permissions(user, view_channel=False)
+
+        # WICHTIGEN EINTRIAG AUS ticket_channels LÖSCHEN (ermöglicht neues Ticket)
+        ticket_channels.pop(interaction.channel.id, None)
+        save_ticket_data()
 
         embed = discord.Embed(
             title="Ticket Closed",
@@ -1501,12 +1618,7 @@ class TicketButtons(discord.ui.View):
         )
         embed.set_footer(text="Rayx Support © 2026")
         await interaction.channel.send(embed=embed)
-
         await send_ticket_log(f"**Ticket closed**\n> By: {interaction.user}\n> Ticket: {interaction.channel.mention}\n> Created by: {user}\n> Type: {ticket_data['type']}")
-
-        ticket_channels.pop(interaction.channel.id, None)
-        ticket_messages.pop(interaction.channel.id, None)
-        save_ticket_data()
 
         delete_view = discord.ui.View(timeout=None)
         delete_view.add_item(discord.ui.Button(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket_closed"))
