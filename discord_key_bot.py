@@ -9,6 +9,7 @@ import subprocess
 import ctypes
 import asyncio
 import threading
+import tempfile
 import urllib.request
 import base64
 import sqlite3
@@ -69,20 +70,60 @@ def save_ticket_data():
     except Exception as e:
         print(f"Error saving ticket data: {e}")
 
-GIST_ID = "1d00ee128d1f4d294ec95e3e160ec195"
-GIST_TOKEN = "gho_" + "WUVZeTTwvNTiSZ0FhYR9dEhGoYzjpc3qj0Um"
-DATABASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys.db")
+GIST_ID = os.environ.get("GIST_ID", "1d00ee128d1f4d294ec95e3e160ec195")
+GIST_TOKEN = os.environ.get("GIST_TOKEN", "")
+DATABASE = os.environ.get("DATABASE_PATH", os.path.join(os.path.dirname(os.path.abspath(__file__)), "keys.db"))
+CLOUD_DATABASE = os.environ.get("CLOUD_DATABASE", os.path.join(os.path.dirname(os.path.abspath(__file__)), "cloud.db"))
+CLOUD_TABLES = ("cloud_users", "cloud_friendships", "cloud_configs", "cloud_shares")
 
 def check_self_update():
     print("Self-Update: Deaktiviert.")
 
 check_self_update()
 
-def sync_db_from_gist():
+def gist_database_payload():
+    temp_path = None
+    source = None
+    target = None
+    filtered = None
     try:
-        token = GIST_TOKEN
+        with tempfile.NamedTemporaryFile(delete=False) as temp_file:
+            temp_path = temp_file.name
+        source = sqlite3.connect(DATABASE, timeout=10)
+        target = sqlite3.connect(temp_path, timeout=10)
+        source.backup(target)
+        target.close()
+        target = None
+        source.close()
+        source = None
+        filtered = sqlite3.connect(temp_path, timeout=10)
+        for table in CLOUD_TABLES:
+            filtered.execute(f"DROP TABLE IF EXISTS {table}")
+        filtered.commit()
+        filtered.close()
+        filtered = None
+        with open(temp_path, "rb") as database_file:
+            return base64.b64encode(database_file.read()).decode()
+    finally:
+        if filtered is not None:
+            filtered.close()
+        if target is not None:
+            target.close()
+        if source is not None:
+            source.close()
+        if temp_path:
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+
+def sync_db_from_gist():
+    if not GIST_ID or not GIST_TOKEN:
+        print("Gist sync deaktiviert (GIST_ID/GIST_TOKEN fehlen)")
+        return
+    try:
         req = urllib.request.Request(f"https://api.github.com/gists/{GIST_ID}")
-        req.add_header("Authorization", f"token {token}")
+        req.add_header("Authorization", f"token {GIST_TOKEN}")
         req.add_header("User-Agent", "PeroxideBot")
         resp = urllib.request.urlopen(req, timeout=10)
         gist = json.loads(resp.read().decode())
@@ -97,16 +138,17 @@ def sync_db_from_gist():
         print(f"sync_db_from_gist error: {e}, starte mit frischer DB")
 
 def sync_db_to_gist():
+    if not GIST_ID or not GIST_TOKEN:
+        print("Gist sync deaktiviert (GIST_ID/GIST_TOKEN fehlen)")
+        return
     try:
-        token = GIST_TOKEN
-        with open(DATABASE, "rb") as f:
-            encoded = base64.b64encode(f.read()).decode()
+        encoded = gist_database_payload()
         body = json.dumps({"files": {"bot_data.json": {"content": encoded}}}).encode()
         req = urllib.request.Request(
             f"https://api.github.com/gists/{GIST_ID}",
             data=body,
             headers={
-                "Authorization": f"token {token}",
+                "Authorization": f"token {GIST_TOKEN}",
                 "Content-Type": "application/json",
                 "User-Agent": "PeroxideBot"
             },
@@ -118,6 +160,7 @@ def sync_db_to_gist():
         print(f"sync_db_to_gist error: {e}")
 
 def init_db():
+    os.makedirs(os.path.dirname(os.path.abspath(DATABASE)), exist_ok=True)
     sync_db_from_gist()
     conn = sqlite3.connect(DATABASE)
     c = conn.cursor()
@@ -152,9 +195,50 @@ def init_db():
     if c.fetchone()[0] == 0:
         c.execute("INSERT INTO masters (discord_id, added_at) VALUES (?, ?)", (MASTER_ID, datetime.now().isoformat()))
     conn.commit()
-    sync_db_to_gist()
     conn.close()
     sync_db_to_gist()
+
+def init_cloud_db():
+    cloud_directory = os.path.dirname(os.path.abspath(CLOUD_DATABASE))
+    os.makedirs(cloud_directory, exist_ok=True)
+    conn = sqlite3.connect(CLOUD_DATABASE, timeout=10)
+    c = conn.cursor()
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_users (
+        discord_id TEXT PRIMARY KEY,
+        display_name TEXT,
+        last_seen TEXT
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_friendships (
+        owner_id TEXT NOT NULL,
+        friend_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (owner_id, friend_id)
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_configs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        owner_id TEXT NOT NULL,
+        code TEXT UNIQUE NOT NULL,
+        name TEXT NOT NULL,
+        config TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        use_count INTEGER DEFAULT 0
+    )""")
+    c.execute("""CREATE TABLE IF NOT EXISTS cloud_shares (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        sender_id TEXT NOT NULL,
+        recipient_id TEXT NOT NULL,
+        name TEXT NOT NULL,
+        config TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        claimed_at TEXT
+    )""")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_cloud_friendships_friend ON cloud_friendships(friend_id, status)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_cloud_configs_owner ON cloud_configs(owner_id, id)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_cloud_shares_recipient ON cloud_shares(recipient_id, claimed_at)")
+    conn.commit()
+    conn.close()
 
 def is_master(discord_id):
     conn = sqlite3.connect(DATABASE)
@@ -173,8 +257,10 @@ def is_whitelisted(discord_id):
     return result is not None
 
 init_db()
+init_cloud_db()
 
 app = Flask(__name__, template_folder='templates')
+app.config['MAX_CONTENT_LENGTH'] = 3 * 1024 * 1024
 
 @app.route('/')
 def index():
@@ -185,6 +271,8 @@ def add_cors_headers(response):
     response.headers['Access-Control-Allow-Origin'] = '*'
     response.headers['Access-Control-Allow-Headers'] = 'Content-Type'
     response.headers['Access-Control-Allow-Methods'] = 'GET, POST, OPTIONS'
+    if request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-store'
     return response
 
 @app.route('/api/auth', methods=['POST', 'OPTIONS'])
@@ -228,7 +316,6 @@ def api_auth():
         conn.commit()
         sync_db_to_gist()
         send_key_log_sync("Key Eingelöst (Loader)", f"Key: `{password}`\nHWID: {hwid}\nDiscord ID: {username}", 0x00ff00)
-        sync_db_to_gist()
     
     c.execute("INSERT OR IGNORE INTO key_meta (key) VALUES (?)", (password,))
     c.execute("UPDATE key_meta SET login_count = login_count + 1, last_login = ? WHERE key = ?",
@@ -414,6 +501,492 @@ def register_hwid():
     send_key_log_sync("Key Eingelost (Loader)", f"Key: `{key}`\nHWID: {hwid}\nDiscord ID: {discord_id}", 0x00ff00)
     
     return jsonify({'success': True, 'message': 'Key registered successfully'}), 200
+
+def cloud_db():
+    conn = sqlite3.connect(CLOUD_DATABASE, timeout=10)
+    conn.execute("PRAGMA busy_timeout = 10000")
+    return conn
+
+def cloud_value(value):
+    return value.strip() if isinstance(value, str) else ""
+
+def cloud_label(value, limit=64):
+    value = cloud_value(value)
+    value = "".join(char for char in value if char.isprintable())
+    return value[:limit].strip()
+
+def cloud_code(value):
+    value = cloud_value(value).upper()
+    return "".join(char for char in value if char.isalnum())[:32]
+
+def cloud_bool(value):
+    if isinstance(value, str):
+        return value.strip().lower() in ("1", "true", "yes", "on")
+    return bool(value)
+
+def cloud_expired(value):
+    try:
+        expires_at = datetime.fromisoformat(value)
+        if expires_at.tzinfo is not None:
+            expires_at = expires_at.replace(tzinfo=None)
+        return datetime.now() > expires_at
+    except (TypeError, ValueError):
+        return True
+
+def cloud_online(value):
+    if not value:
+        return False
+    try:
+        last_seen = datetime.fromisoformat(value)
+        if last_seen.tzinfo is not None:
+            last_seen = last_seen.replace(tzinfo=None)
+        return (datetime.now() - last_seen).total_seconds() < 300
+    except (TypeError, ValueError):
+        return False
+
+def cloud_error(message, status=400):
+    return jsonify({'success': False, 'error': message}), status
+
+def cloud_auth(data):
+    if not isinstance(data, dict):
+        return None, cloud_error('Invalid request')
+
+    discord_id = cloud_value(data.get('discord_id', data.get('username')))
+    license_key = cloud_value(data.get('license', data.get('key', data.get('password'))))
+    hwid = cloud_value(data.get('hwid'))
+    if not discord_id.isdigit() or not 5 <= len(discord_id) <= 22:
+        return None, cloud_error('Invalid Discord ID')
+    if not license_key or not hwid:
+        return None, cloud_error('Missing license or HWID')
+
+    conn = sqlite3.connect(DATABASE, timeout=10)
+    conn.execute("PRAGMA busy_timeout = 10000")
+    row = conn.execute('SELECT hwid, discord_id, expires_at, used FROM keys WHERE key = ?', (license_key,)).fetchone()
+    conn.close()
+    if not row:
+        return None, cloud_error('Invalid license', 401)
+    if not row[0] or not row[1] or not row[3]:
+        return None, cloud_error('License is not bound to this session', 403)
+    if cloud_expired(row[2]):
+        return None, cloud_error('License expired', 403)
+    if row[0] != hwid:
+        return None, cloud_error('HWID mismatch', 403)
+    if row[1] != discord_id:
+        return None, cloud_error('Discord ID mismatch', 403)
+
+    display_name = cloud_label(data.get('display_name'))
+    now = datetime.now().isoformat()
+    conn = cloud_db()
+    conn.execute(
+        'INSERT OR IGNORE INTO cloud_users(discord_id, display_name, last_seen) VALUES (?, ?, ?)',
+        (discord_id, display_name, now)
+    )
+    conn.execute(
+        'UPDATE cloud_users SET display_name = ?, last_seen = ? WHERE discord_id = ?',
+        (display_name, now, discord_id)
+    )
+    conn.commit()
+    conn.close()
+    return {'id': discord_id, 'name': display_name}, None
+
+def cloud_friend_entry(identifier, name, last_seen):
+    return {
+        'id': str(identifier),
+        'name': name or str(identifier),
+        'online': cloud_online(last_seen)
+    }
+
+def cloud_friends_sync(identity):
+    discord_id = identity['id']
+    conn = cloud_db()
+    try:
+        friends = [
+            cloud_friend_entry(row[0], row[1], row[2])
+            for row in conn.execute(
+                '''SELECT f.friend_id, u.display_name, u.last_seen
+                   FROM cloud_friendships f
+                   LEFT JOIN cloud_users u ON u.discord_id = f.friend_id
+                   WHERE f.owner_id = ? AND f.status = 'accepted'
+                   ORDER BY f.updated_at DESC''',
+                (discord_id,)
+            ).fetchall()
+        ]
+        incoming = [
+            cloud_friend_entry(row[0], row[1], row[2])
+            for row in conn.execute(
+                '''SELECT f.owner_id, u.display_name, u.last_seen
+                   FROM cloud_friendships f
+                   LEFT JOIN cloud_users u ON u.discord_id = f.owner_id
+                   WHERE f.friend_id = ? AND f.status = 'pending'
+                   ORDER BY f.created_at DESC''',
+                (discord_id,)
+            ).fetchall()
+        ]
+        outgoing = [
+            cloud_friend_entry(row[0], row[1], row[2])
+            for row in conn.execute(
+                '''SELECT f.friend_id, u.display_name, u.last_seen
+                   FROM cloud_friendships f
+                   LEFT JOIN cloud_users u ON u.discord_id = f.friend_id
+                   WHERE f.owner_id = ? AND f.status = 'pending'
+                   ORDER BY f.created_at DESC''',
+                (discord_id,)
+            ).fetchall()
+        ]
+        shares = [
+            {
+                'id': row[0],
+                'from_id': str(row[1]),
+                'from_name': row[2] or str(row[1]),
+                'name': row[3] or 'config',
+                'code': ''
+            }
+            for row in conn.execute(
+                '''SELECT s.id, s.sender_id, u.display_name, s.name
+                   FROM cloud_shares s
+                   LEFT JOIN cloud_users u ON u.discord_id = s.sender_id
+                   WHERE s.recipient_id = ? AND s.claimed_at IS NULL
+                   ORDER BY s.id DESC''',
+                (discord_id,)
+            ).fetchall()
+        ]
+    finally:
+        conn.close()
+    return {
+        'success': True,
+        'me': identity['name'] or discord_id,
+        'friends': friends,
+        'incoming': incoming,
+        'outgoing': outgoing,
+        'shares': shares
+    }
+
+@app.route('/api/friends/sync', methods=['POST', 'OPTIONS'])
+def friends_sync():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    identity, error = cloud_auth(request.get_json(silent=True) or {})
+    if error:
+        return error
+    return jsonify(cloud_friends_sync(identity))
+
+@app.route('/api/friends/request', methods=['POST', 'OPTIONS'])
+def friends_request():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    data = request.get_json(silent=True) or {}
+    identity, error = cloud_auth(data)
+    if error:
+        return error
+    target_id = cloud_value(data.get('target_id'))
+    if not target_id.isdigit() or not 5 <= len(target_id) <= 22:
+        return cloud_error('Invalid Discord ID')
+    if target_id == identity['id']:
+        return cloud_error('Cannot add yourself')
+
+    now = datetime.now().isoformat()
+    conn = cloud_db()
+    existing = conn.execute(
+        'SELECT status FROM cloud_friendships WHERE owner_id = ? AND friend_id = ?',
+        (identity['id'], target_id)
+    ).fetchone()
+    reverse = conn.execute(
+        'SELECT status FROM cloud_friendships WHERE owner_id = ? AND friend_id = ?',
+        (target_id, identity['id'])
+    ).fetchone()
+    if existing and existing[0] == 'accepted':
+        conn.close()
+        return jsonify({'success': True, 'message': 'Already friends'}), 200
+    if reverse and reverse[0] == 'accepted':
+        conn.close()
+        return jsonify({'success': True, 'message': 'Already friends'}), 200
+    if existing and existing[0] == 'pending':
+        conn.close()
+        return jsonify({'success': True, 'message': 'Request already pending'}), 200
+    if reverse and reverse[0] == 'pending':
+        conn.close()
+        return cloud_error('The other user already has a pending request', 409)
+
+    conn.execute(
+        '''INSERT OR IGNORE INTO cloud_friendships(owner_id, friend_id, status, created_at, updated_at)
+           VALUES (?, ?, 'pending', ?, ?)''',
+        (identity['id'], target_id, now, now)
+    )
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'message': 'Friend request sent'}), 200
+
+@app.route('/api/friends/respond', methods=['POST', 'OPTIONS'])
+def friends_respond():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    data = request.get_json(silent=True) or {}
+    identity, error = cloud_auth(data)
+    if error:
+        return error
+    from_id = cloud_value(data.get('from_id'))
+    if not from_id.isdigit() or not 5 <= len(from_id) <= 22:
+        return cloud_error('Invalid Discord ID')
+
+    accept = cloud_bool(data.get('accept'))
+    now = datetime.now().isoformat()
+    conn = cloud_db()
+    request_row = conn.execute(
+        '''SELECT 1 FROM cloud_friendships
+           WHERE owner_id = ? AND friend_id = ? AND status = 'pending' ''',
+        (from_id, identity['id'])
+    ).fetchone()
+    if not request_row:
+        conn.close()
+        return cloud_error('Friend request not found', 404)
+
+    if accept:
+        conn.execute(
+            '''UPDATE cloud_friendships
+               SET status = 'accepted', updated_at = ?
+               WHERE owner_id = ? AND friend_id = ? AND status = 'pending' ''',
+            (now, from_id, identity['id'])
+        )
+        conn.execute(
+            '''INSERT OR IGNORE INTO cloud_friendships(owner_id, friend_id, status, created_at, updated_at)
+               VALUES (?, ?, 'accepted', ?, ?)''',
+            (identity['id'], from_id, now, now)
+        )
+        conn.execute(
+            '''UPDATE cloud_friendships
+               SET status = 'accepted', updated_at = ?
+               WHERE owner_id = ? AND friend_id = ?''',
+            (now, identity['id'], from_id)
+        )
+    else:
+        conn.execute(
+            '''DELETE FROM cloud_friendships
+               WHERE owner_id = ? AND friend_id = ? AND status = 'pending' ''',
+            (from_id, identity['id'])
+        )
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'accepted': accept}), 200
+
+@app.route('/api/friends/remove', methods=['POST', 'OPTIONS'])
+def friends_remove():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    data = request.get_json(silent=True) or {}
+    identity, error = cloud_auth(data)
+    if error:
+        return error
+    friend_id = cloud_value(data.get('friend_id'))
+    if not friend_id.isdigit() or not 5 <= len(friend_id) <= 22:
+        return cloud_error('Invalid Discord ID')
+
+    conn = cloud_db()
+    result = conn.execute(
+        '''DELETE FROM cloud_friendships
+           WHERE (owner_id = ? AND friend_id = ?) OR (owner_id = ? AND friend_id = ?)''',
+        (identity['id'], friend_id, friend_id, identity['id'])
+    )
+    removed = result.rowcount
+    conn.commit()
+    conn.close()
+    if not removed:
+        return cloud_error('Friend not found', 404)
+    return jsonify({'success': True, 'message': 'Friend removed'}), 200
+
+@app.route('/api/friends/share', methods=['POST', 'OPTIONS'])
+def friends_share():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    data = request.get_json(silent=True) or {}
+    identity, error = cloud_auth(data)
+    if error:
+        return error
+    friend_id = cloud_value(data.get('friend_id'))
+    if not friend_id.isdigit() or not 5 <= len(friend_id) <= 22:
+        return cloud_error('Invalid Discord ID')
+    config = data.get('config')
+    if isinstance(config, (dict, list)):
+        config = json.dumps(config, ensure_ascii=False, separators=(',', ':'))
+    elif not isinstance(config, str):
+        config = ''
+    if not config:
+        return cloud_error('Empty config')
+    if len(config.encode('utf-8')) > 2 * 1024 * 1024:
+        return cloud_error('Config too large', 413)
+    name = cloud_label(data.get('name')) or 'config'
+
+    conn = cloud_db()
+    friend_row = conn.execute(
+        '''SELECT 1 FROM cloud_friendships
+           WHERE status = 'accepted'
+             AND ((owner_id = ? AND friend_id = ?) OR (owner_id = ? AND friend_id = ?))''',
+        (identity['id'], friend_id, friend_id, identity['id'])
+    ).fetchone()
+    if not friend_row:
+        conn.close()
+        return cloud_error('You are not friends', 403)
+
+    cursor = conn.execute(
+        '''INSERT INTO cloud_shares(sender_id, recipient_id, name, config, created_at)
+           VALUES (?, ?, ?, ?, ?)''',
+        (identity['id'], friend_id, name, config, datetime.now().isoformat())
+    )
+    share_id = cursor.lastrowid
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'share_id': share_id}), 200
+
+@app.route('/api/friends/claim', methods=['POST', 'OPTIONS'])
+def friends_claim():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    data = request.get_json(silent=True) or {}
+    identity, error = cloud_auth(data)
+    if error:
+        return error
+    try:
+        share_id = int(data.get('share_id'))
+    except (TypeError, ValueError):
+        return cloud_error('Invalid share')
+    if share_id <= 0:
+        return cloud_error('Invalid share')
+
+    conn = cloud_db()
+    row = conn.execute(
+        '''SELECT sender_id, name, config, claimed_at
+           FROM cloud_shares WHERE id = ? AND recipient_id = ?''',
+        (share_id, identity['id'])
+    ).fetchone()
+    if not row:
+        conn.close()
+        return cloud_error('Share not found', 404)
+    if row[3]:
+        conn.close()
+        return cloud_error('Share already claimed', 409)
+
+    if cloud_bool(data.get('apply')):
+        result = conn.execute(
+            'UPDATE cloud_shares SET claimed_at = ? WHERE id = ? AND recipient_id = ? AND claimed_at IS NULL',
+            (datetime.now().isoformat(), share_id, identity['id'])
+        )
+        conn.commit()
+        conn.close()
+        if not result.rowcount:
+            return cloud_error('Share already claimed', 409)
+        return jsonify({'success': True, 'name': row[1], 'config': row[2]}), 200
+
+    conn.close()
+    return jsonify({'success': True, 'name': row[1]}), 200
+
+@app.route('/api/config/save', methods=['POST', 'OPTIONS'])
+def cloud_config_save():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    data = request.get_json(silent=True) or {}
+    identity, error = cloud_auth(data)
+    if error:
+        return error
+    name = cloud_label(data.get('name')) or 'config'
+    config = data.get('config')
+    if isinstance(config, (dict, list)):
+        config = json.dumps(config, ensure_ascii=False, separators=(',', ':'))
+    elif not isinstance(config, str):
+        config = ''
+    if not config:
+        return cloud_error('Empty config')
+    if len(config.encode('utf-8')) > 2 * 1024 * 1024:
+        return cloud_error('Config too large', 413)
+
+    conn = cloud_db()
+    code = None
+    for _ in range(10):
+        candidate = uuid.uuid4().hex[:8].upper()
+        try:
+            conn.execute(
+                '''INSERT INTO cloud_configs(owner_id, code, name, config, created_at)
+                   VALUES (?, ?, ?, ?, ?)''',
+                (identity['id'], candidate, name, config, datetime.now().isoformat())
+            )
+            code = candidate
+            break
+        except sqlite3.IntegrityError:
+            continue
+    if code is None:
+        conn.close()
+        return cloud_error('Could not allocate share code', 503)
+    conn.commit()
+    conn.close()
+    return jsonify({'success': True, 'code': code}), 200
+
+@app.route('/api/config/load', methods=['POST', 'OPTIONS'])
+def cloud_config_load():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    data = request.get_json(silent=True) or {}
+    code = cloud_code(data.get('code'))
+    if len(code) != 8:
+        return cloud_error('Invalid code')
+    conn = cloud_db()
+    row = conn.execute(
+        'SELECT name, config, created_at, use_count FROM cloud_configs WHERE code = ?',
+        (code,)
+    ).fetchone()
+    if not row:
+        conn.close()
+        return cloud_error('Config not found', 404)
+    use_count = (row[3] or 0) + 1
+    conn.execute('UPDATE cloud_configs SET use_count = ? WHERE code = ?', (use_count, code))
+    conn.commit()
+    conn.close()
+    return jsonify({
+        'success': True,
+        'name': row[0],
+        'config': row[1],
+        'created_at': row[2],
+        'use_count': use_count
+    }), 200
+
+@app.route('/api/config/mine', methods=['POST', 'OPTIONS'])
+def cloud_config_mine():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    identity, error = cloud_auth(request.get_json(silent=True) or {})
+    if error:
+        return error
+    conn = cloud_db()
+    rows = conn.execute(
+        '''SELECT code, name, created_at, use_count
+           FROM cloud_configs WHERE owner_id = ? ORDER BY id DESC''',
+        (identity['id'],)
+    ).fetchall()
+    conn.close()
+    return jsonify({
+        'success': True,
+        'configs': [
+            {'code': row[0], 'name': row[1], 'created_at': row[2], 'use_count': row[3]}
+            for row in rows
+        ]
+    }), 200
+
+@app.route('/api/config/delete', methods=['POST', 'OPTIONS'])
+def cloud_config_delete():
+    if request.method == 'OPTIONS':
+        return jsonify({}), 200
+    data = request.get_json(silent=True) or {}
+    identity, error = cloud_auth(data)
+    if error:
+        return error
+    code = cloud_code(data.get('code'))
+    if len(code) != 8:
+        return cloud_error('Invalid code')
+    conn = cloud_db()
+    result = conn.execute('DELETE FROM cloud_configs WHERE owner_id = ? AND code = ?', (identity['id'], code))
+    deleted = result.rowcount
+    conn.commit()
+    conn.close()
+    if not deleted:
+        return cloud_error('Config not found', 404)
+    return jsonify({'success': True}), 200
 
 def run_flask():
     app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
