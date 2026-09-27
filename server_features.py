@@ -102,10 +102,24 @@ LOG_ATTACHMENTS  = _env_bool("LOG_ATTACHMENTS", True)
 LOG_VOICE        = _env_bool("LOG_VOICE", True)
 LOG_MESSAGE_EDIT = _env_bool("LOG_MESSAGE_EDIT", True)
 
+# Staff-Liste (Embed wird automatisch aktualisiert)
+STAFF_LIST_CHANNEL_ID = _env_int("STAFF_LIST_CHANNEL_ID", 1553630672596504636)
+# Reihenfolge = Rang (oben = höchster). Jeder wird nur unter seiner HÖCHSTEN Rolle gelistet.
+STAFF_ROLES = [
+    ("Owner",         1472321741391925362),
+    ("Developer",     1472321746236604436),
+    ("Manager",       1472321749298446611),
+    ("Administrator", 1472321744839901334),
+    ("Staff",         1541543148122280026),
+    ("7z",            1472321748358660259),
+]
+STAFF_LIST_TITLE = "‶ Staff Team"
+
 # ── Design ──
 LOG_FOOTER       = "RAYX • Server Logs"
 ANNOUNCE_FOOTER  = "RAYX"
-EMBED_DARK       = 0x111214     # fast schwarz → wirkt im Dark-Theme "clean"
+EMBED_DARK       = 0x000000     # schwarzer Balken links (wie im "PASSED"-Stil)
+ANNOUNCE_SHOW_FOOTER = _env_bool("ANNOUNCE_SHOW_FOOTER", False)   # "von <User>" unter der Ankündigung
 
 C_CREATE  = 0x2ECC71   # grün      – erstellt
 C_DELETE  = 0xE74C3C   # rot       – gelöscht
@@ -136,7 +150,7 @@ COLOR_PRESETS = {
 }
 
 IMAGE_EXTS = (".png", ".jpg", ".jpeg", ".gif", ".webp")
-MAX_GALLERY_IMAGES = 4          # Discord zeigt max. 4 Bilder als Galerie in einem Embed
+MAX_EMBED_IMAGES = 10           # Discord erlaubt max. 10 Embeds pro Nachricht (1 Bild je Embed)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -784,29 +798,27 @@ class AnnouncementDraft:
         self.files: list[tuple[str, bytes, bool, bool]] = []   # (name, data, is_image, spoiler)
 
     def build(self) -> tuple[list[discord.Embed], list[discord.File]]:
-        """Erzeugt Embeds + frische discord.File-Objekte."""
+        """Erzeugt Embeds + frische discord.File-Objekte im "PASSED"-Stil:
+        schwarzer Balken, fetter Titel, jedes Bild in einem eigenen Embed-Kasten."""
         files = [discord.File(io.BytesIO(data), filename=name, spoiler=spoiler)
                  for name, data, _img, spoiler in self.files]
-        images = [name for name, _d, is_img, spoiler in self.files if is_img and not spoiler][:MAX_GALLERY_IMAGES]
+        images = [name for name, _d, is_img, spoiler in self.files if is_img and not spoiler][:MAX_EMBED_IMAGES]
 
-        # Gleiche URL auf allen Embeds → Discord zeigt die Bilder als Galerie
-        gallery_url = f"https://discord.com/channels/{self.guild.id}"
+        title, text = self.title, self.text
+        # Kein eigener Titel + kurzer einzeiliger Text → Text wird zum fetten Titel (wie im Screenshot)
+        if not title and text and "\n" not in text and len(text) <= 256:
+            title, text = text, ""
 
-        main = discord.Embed(
-            title=_cut(self.title, 256) or None,
-            description=_cut(self.text, 4096) or None,
-            color=EMBED_DARK,
-            timestamp=discord.utils.utcnow(),
-            url=gallery_url if images else None,
-        )
-        main.set_author(name=self.guild.name, icon_url=self.guild.icon.url if self.guild.icon else None)
-        main.set_footer(text=f"{ANNOUNCE_FOOTER}  •  von {self.author.display_name}",
-                        icon_url=self.author.display_avatar.url)
+        main = discord.Embed(title=_cut(title, 256) or None,
+                             description=_cut(text, 4096) or None,
+                             color=EMBED_DARK)
+        if ANNOUNCE_SHOW_FOOTER:
+            main.set_footer(text=f"von {self.author.display_name}", icon_url=self.author.display_avatar.url)
         embeds = [main]
         if images:
             main.set_image(url=f"attachment://{images[0]}")
             for name in images[1:]:
-                extra = discord.Embed(url=gallery_url, color=EMBED_DARK)
+                extra = discord.Embed(color=EMBED_DARK)
                 extra.set_image(url=f"attachment://{name}")
                 embeds.append(extra)
         return embeds, files
@@ -1079,6 +1091,151 @@ class AnnouncementSystem(commands.Cog):
 
 
 # ══════════════════════════════════════════════════════════════
+#  3a. STAFF-LISTE  (auto-aktualisierendes Embed)
+# ══════════════════════════════════════════════════════════════
+#
+#  Postet EIN Embed in STAFF_LIST_CHANNEL_ID und bearbeitet es danach
+#  immer wieder (kein Spam). Aktualisiert sich automatisch, wenn:
+#   • jemand eine Staff-Rolle bekommt / verliert
+#   • ein Staff-Mitglied den Server verlässt
+#   • eine Staff-Rolle umbenannt wird
+#   • sonst alle 10 Minuten (Sicherheitsnetz)
+# ══════════════════════════════════════════════════════════════
+
+class StaffList(commands.Cog):
+
+    UPDATE_DELAY = 5            # Sekunden sammeln, bevor aktualisiert wird (bei vielen Änderungen)
+    REFRESH_INTERVAL = 600      # 10 Minuten
+
+    def __init__(self, bot: commands.Bot):
+        self.bot = bot
+        self._pending: Optional[asyncio.Task] = None
+        self._loop_task: Optional[asyncio.Task] = None
+        self._message_id: Optional[int] = None
+        self._lock = asyncio.Lock()
+        self._role_ids = {rid for _n, rid in STAFF_ROLES}
+
+    async def cog_unload(self):
+        for t in (self._pending, self._loop_task):
+            if t:
+                t.cancel()
+
+    # ── Embed bauen ───────────────────────────────────────────
+
+    def build_embed(self, guild: discord.Guild) -> discord.Embed:
+        listed: set[int] = set()
+        embed = discord.Embed(title=STAFF_LIST_TITLE, color=EMBED_DARK)
+        total = 0
+        for fallback_name, role_id in STAFF_ROLES:
+            role = guild.get_role(role_id)
+            name = role.name if role else fallback_name
+            members = []
+            if role:
+                for m in sorted(role.members, key=lambda x: x.display_name.lower()):
+                    if m.id in listed or m.bot:
+                        continue
+                    listed.add(m.id)
+                    members.append(m)
+            total += len(members)
+
+            lines, value = [f"> {m.mention}" for m in members], ""
+            for i, line in enumerate(lines):
+                if len(value) + len(line) + 30 > 1024:
+                    value += f"> *+{len(lines) - i} weitere*"
+                    break
+                value += line + "\n"
+            header = f"{role.mention}" if role else f"`{fallback_name}`"
+            embed.add_field(
+                name=f"‶ {name}  ·  {len(members)}",
+                value=(f"{header}\n{value}" if members else f"{header}\n> *— niemand —*")[:1024],
+                inline=False,
+            )
+        embed.set_footer(text=f"{total} Teammitglieder  •  Automatisch aktualisiert")
+        embed.timestamp = discord.utils.utcnow()
+        return embed
+
+    # ── Senden / Bearbeiten ───────────────────────────────────
+
+    async def update(self) -> None:
+        async with self._lock:
+            channel = self.bot.get_channel(STAFF_LIST_CHANNEL_ID)
+            if channel is None:
+                print(f"[STAFF] Channel {STAFF_LIST_CHANNEL_ID} nicht gefunden.")
+                return
+            embed = self.build_embed(channel.guild)
+            try:
+                msg = None
+                if self._message_id:
+                    try:
+                        msg = await channel.fetch_message(self._message_id)
+                    except discord.NotFound:
+                        msg = None
+                if msg is None:
+                    # Bestehende Liste suchen (z.B. nach Neustart auf Render)
+                    async for m in channel.history(limit=30):
+                        if m.author.id == self.bot.user.id and m.embeds and m.embeds[0].title == STAFF_LIST_TITLE:
+                            msg = m
+                            break
+                if msg is None:
+                    msg = await channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                else:
+                    await msg.edit(embed=embed, allowed_mentions=discord.AllowedMentions.none())
+                self._message_id = msg.id
+            except discord.Forbidden:
+                print("[STAFF] Keine Rechte im Staff-Channel (Nachrichten senden / Verlauf lesen / Links einbetten).")
+            except discord.HTTPException as e:
+                print(f"[STAFF] Fehler: {e}")
+
+    def schedule_update(self) -> None:
+        """Mehrere Änderungen kurz hintereinander → nur EIN Edit."""
+        if self._pending and not self._pending.done():
+            return
+
+        async def _run():
+            await asyncio.sleep(self.UPDATE_DELAY)
+            await self.update()
+        self._pending = asyncio.create_task(_run())
+
+    # ── Events ────────────────────────────────────────────────
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        await self.update()
+        if self._loop_task is None:
+            async def _loop():
+                while True:
+                    await asyncio.sleep(self.REFRESH_INTERVAL)
+                    try:
+                        await self.update()
+                    except Exception as e:
+                        print(f"[STAFF] Loop-Fehler: {e}")
+            self._loop_task = asyncio.create_task(_loop())
+
+    def _is_staff_guild(self, guild) -> bool:
+        ch = self.bot.get_channel(STAFF_LIST_CHANNEL_ID)
+        return ch is not None and guild is not None and ch.guild.id == guild.id
+
+    @commands.Cog.listener()
+    async def on_member_update(self, before: discord.Member, after: discord.Member):
+        if not self._is_staff_guild(after.guild):
+            return
+        changed = {r.id for r in before.roles} ^ {r.id for r in after.roles}
+        if changed & self._role_ids or (before.display_name != after.display_name
+                                        and {r.id for r in after.roles} & self._role_ids):
+            self.schedule_update()
+
+    @commands.Cog.listener()
+    async def on_member_remove(self, member: discord.Member):
+        if self._is_staff_guild(member.guild) and {r.id for r in member.roles} & self._role_ids:
+            self.schedule_update()
+
+    @commands.Cog.listener()
+    async def on_guild_role_update(self, before: discord.Role, after: discord.Role):
+        if after.id in self._role_ids and (before.name != after.name or before.color != after.color):
+            self.schedule_update()
+
+
+# ══════════════════════════════════════════════════════════════
 #  3.  SLASH-COMMAND  /send
 # ══════════════════════════════════════════════════════════════
 
@@ -1155,12 +1312,9 @@ class SendCommand(commands.Cog):
         embed = None
         if use_embed:
             body = message + (f"\n\n{description}" if description else "")
+            # Schlichter "PASSED"-Stil: farbiger Balken, Titel, Text, Bild – kein Autor/Footer
             embed = discord.Embed(title=_cut(title, 256) if title else None,
-                                  description=_cut(body, 4096), color=embed_color,
-                                  timestamp=discord.utils.utcnow())
-            embed.set_author(name=interaction.guild.name,
-                             icon_url=interaction.guild.icon.url if interaction.guild.icon else None)
-            embed.set_footer(text=ANNOUNCE_FOOTER)
+                                  description=_cut(body, 4096), color=embed_color)
             if image_url:
                 embed.set_image(url=image_url)
             elif files and _is_image(image.filename, image.content_type):
@@ -1225,7 +1379,7 @@ def install_server_features(bot: commands.Bot) -> None:
 
     async def setup_hook():
         await original_setup_hook()
-        for cog_cls in (ServerLogger, AnnouncementSystem, SendCommand):
+        for cog_cls in (ServerLogger, AnnouncementSystem, StaffList, SendCommand):
             try:
                 await bot.add_cog(cog_cls(bot))
                 print(f"[SERVER-FEATURES] {cog_cls.__name__} geladen")
