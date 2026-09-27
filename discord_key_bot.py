@@ -20,6 +20,9 @@ from flask import Flask, jsonify, request, render_template
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True          # NEU: für Join/Leave/Nickname/Timeout-Logs (Server Members Intent im Dev-Portal aktivieren!)
+intents.guilds = True           # NEU: Rollen-/Channel-Events
+intents.moderation = True       # NEU: Ban/Unban-Events
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # — Channel IDs —
@@ -2416,6 +2419,18 @@ async def on_message(message):
             "timestamp": datetime.now()
         })
     await bot.process_commands(message)
+
+
+# ══════════════════════════════════════════════════════════════
+#  NEU: Server-Features (Server-Logging, Ankündigungs-System, /send)
+#  → komplett in server_features.py, bestehender Code bleibt unverändert
+# ══════════════════════════════════════════════════════════════
+
+try:
+    from server_features import install_server_features
+    install_server_features(bot)
+except Exception as _sf_err:
+    print(f"[SERVER-FEATURES] konnte nicht geladen werden: {_sf_err}")
 
 
 # ══════════════════════════════════════════════════════════════
