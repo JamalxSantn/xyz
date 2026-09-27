@@ -1138,21 +1138,33 @@ class StaffList(commands.Cog):
                     members.append(m)
             total += len(members)
 
-            lines, value = [f"> {m.mention}" for m in members], ""
+            # Namen als TEXT statt @Erwähnung – Erwähnungen zeigen bei manchen Usern
+            # nur "<@ID>", wenn deren Discord-Client den User nicht im Cache hat.
+            lines, value = [self._member_line(m) for m in members], ""
             for i, line in enumerate(lines):
                 if len(value) + len(line) + 30 > 1024:
                     value += f"> *+{len(lines) - i} weitere*"
                     break
                 value += line + "\n"
             header = f"{role.mention}" if role else f"`{fallback_name}`"
+            # Rollennamen enthalten teils schon "‶" → nicht doppelt davor setzen
+            label = name if name.lstrip().startswith("‶") else f"‶ {name}"
             embed.add_field(
-                name=f"‶ {name}  ·  {len(members)}",
+                name=f"{label}  ·  {len(members)}",
                 value=(f"{header}\n{value}" if members else f"{header}\n> *— niemand —*")[:1024],
                 inline=False,
             )
         embed.set_footer(text=f"{total} Teammitglieder  •  Automatisch aktualisiert")
         embed.timestamp = discord.utils.utcnow()
         return embed
+
+    @staticmethod
+    def _member_line(m: discord.Member) -> str:
+        """z.B.  > **Snow** · `snow`   (Anzeigename fett, Username klein daneben)"""
+        display = discord.utils.escape_markdown(m.display_name)
+        if m.display_name.lower() != m.name.lower():
+            return f"> **{display}** · `{m.name}`"
+        return f"> **{display}**"
 
     # ── Senden / Bearbeiten ───────────────────────────────────
 
