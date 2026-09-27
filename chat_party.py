@@ -252,6 +252,118 @@ def register_chat_party(app, db_path=None):
     member_party = {}    # key -> code
     send_dedup = {}      # key -> { text, ts, message }
     lock = threading.Lock()
+    state_loaded = [False]
+    chat_dirty = [False]
+    last_chat_push = [0.0]
+
+    def _chat_db():
+        conn = sqlite3.connect(db_file, timeout=10)
+        conn.execute("PRAGMA busy_timeout = 10000")
+        return conn
+
+    def _ensure_chat_tables():
+        try:
+            conn = _chat_db()
+            conn.execute("CREATE TABLE IF NOT EXISTS chat_global(id INTEGER PRIMARY KEY, name TEXT, handle TEXT, role TEXT, text TEXT, ts INTEGER)")
+            conn.execute("CREATE TABLE IF NOT EXISTS chat_party(code TEXT, id INTEGER, name TEXT, handle TEXT, role TEXT, text TEXT, ts INTEGER, PRIMARY KEY (code, id))")
+            conn.execute("CREATE TABLE IF NOT EXISTS chat_party_members(code TEXT, hwid TEXT, last_seen REAL, PRIMARY KEY (code, hwid))")
+            conn.commit()
+            conn.close()
+        except Exception:
+            pass
+
+    def _load_chat_state():
+        # lazy: runs on first request, i.e. AFTER init_db's gist restore
+        _ensure_chat_tables()
+        try:
+            conn = _chat_db()
+            for mid, name, handle, role, text, ts in conn.execute(
+                    "SELECT id, name, handle, role, text, ts FROM chat_global ORDER BY id"):
+                global_messages.append({"id": mid, "name": name, "handle": handle,
+                                        "role": role or "", "text": text, "ts": ts})
+            if global_messages:
+                next_global_id[0] = max(m["id"] for m in global_messages) + 1
+            for code, in conn.execute("SELECT DISTINCT code FROM chat_party"):
+                parties[code] = {"code": code, "created": time.time(), "next_id": 1,
+                                 "messages": [], "members": {}}
+            for code, mid, name, handle, role, text, ts in conn.execute(
+                    "SELECT code, id, name, handle, role, text, ts FROM chat_party ORDER BY code, id"):
+                party = parties.get(code)
+                if party is None:
+                    continue
+                party["messages"].append({"id": mid, "name": name, "handle": handle,
+                                         "role": role or "", "text": text, "ts": ts})
+                if mid >= party["next_id"]:
+                    party["next_id"] = mid + 1
+            for code, hwid, last_seen in conn.execute(
+                    "SELECT code, hwid, last_seen FROM chat_party_members"):
+                party = parties.get(code)
+                if party is None:
+                    continue
+                party["members"][hwid] = last_seen
+                member_party[hwid] = code
+            conn.close()
+        except Exception:
+            pass
+
+    def _ensure_chat_ready():
+        if not state_loaded[0]:
+            state_loaded[0] = True
+            _load_chat_state()
+
+    def _mark_chat_dirty():
+        chat_dirty[0] = True
+
+    def _save_global_msg(msg):
+        try:
+            conn = _chat_db()
+            conn.execute("INSERT OR REPLACE INTO chat_global(id,name,handle,role,text,ts) VALUES (?,?,?,?,?,?)",
+                         (msg["id"], msg["name"], msg["handle"], msg.get("role", ""),
+                          msg["text"], msg["ts"]))
+            conn.execute("DELETE FROM chat_global WHERE id <= (SELECT MAX(id)-100 FROM chat_global)")
+            conn.commit()
+            conn.close()
+            _mark_chat_dirty()
+        except Exception:
+            pass
+
+    def _save_party_msg(code, msg):
+        try:
+            conn = _chat_db()
+            conn.execute("INSERT OR REPLACE INTO chat_party(code,id,name,handle,role,text,ts) VALUES (?,?,?,?,?,?,?)",
+                         (code, msg["id"], msg["name"], msg["handle"], msg.get("role", ""),
+                          msg["text"], msg["ts"]))
+            conn.execute("DELETE FROM chat_party WHERE code = ? AND id <= (SELECT MAX(id)-100 FROM chat_party WHERE code = ?)",
+                         (code, code))
+            conn.commit()
+            conn.close()
+            _mark_chat_dirty()
+        except Exception:
+            pass
+
+    def _save_party_members(code):
+        try:
+            party = parties.get(code)
+            conn = _chat_db()
+            if party is None:
+                conn.execute("DELETE FROM chat_party_members WHERE code = ?", (code,))
+                conn.execute("DELETE FROM chat_party WHERE code = ?", (code,))
+            else:
+                for hwid, ts in list(party["members"].items()):
+                    conn.execute("INSERT OR REPLACE INTO chat_party_members(code,hwid,last_seen) VALUES (?,?,?)",
+                                 (code, hwid, ts))
+                if party["members"]:
+                    placeholders = ",".join("?" for _ in party["members"])
+                    conn.execute("DELETE FROM chat_party_members WHERE code = ? AND hwid NOT IN (%s)" % placeholders,
+                                 tuple([code] + list(party["members"].keys())))
+                else:
+                    conn.execute("DELETE FROM chat_party_members WHERE code = ?", (code,))
+                    conn.execute("DELETE FROM chat_party WHERE code = ?", (code,))
+            conn.commit()
+            conn.close()
+            _mark_chat_dirty()
+        except Exception:
+            pass
 
     def _log_embed(title, color, fields):
         _discord_post_channel(CHAT_LOG_CHANNEL_ID, {
@@ -402,6 +514,8 @@ def register_chat_party(app, db_path=None):
                 if not party["members"]:
                     parties.pop(code, None)
             member_party.pop(key, None)
+        if code:
+            _save_party_members(code)
         if log_it and code:
             ident = (identity_cache.get(key) or {}).get("identity") or \
                 {"name": "Unknown", "handle": "@unknown", "role": "",
@@ -418,6 +532,7 @@ def register_chat_party(app, db_path=None):
             time.sleep(30)
             try:
                 now = time.time()
+                dead_codes = []
                 with lock:
                     for k in [k for k, hb in heartbeats.items() if now - hb["last_seen"] > HEARTBEAT_TTL]:
                         heartbeats.pop(k, None)
@@ -431,6 +546,20 @@ def register_chat_party(app, db_path=None):
                                 member_party.pop(k, None)
                         if not party["members"]:
                             parties.pop(code, None)
+                            dead_codes.append(code)
+                for code in dead_codes:
+                    _save_party_members(code)
+                # persist chat history to gist (survives restarts) - at most every 3 min
+                if chat_dirty[0] and now - last_chat_push[0] > 180:
+                    try:
+                        import __main__ as _mainmod
+                        push = getattr(_mainmod, "sync_db_to_gist", None)
+                        if callable(push):
+                            push()
+                            last_chat_push[0] = now
+                            chat_dirty[0] = False
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
@@ -453,6 +582,7 @@ def register_chat_party(app, db_path=None):
         hwid, discord_id, license_key, display_name = _req_identity(data)
         if not (hwid or discord_id or license_key):
             return jsonify({"ok": False, "error": "missing_identity"}), 400
+        _ensure_chat_ready()
         try:
             ident = _touch(hwid, discord_id, license_key, display_name)
             users = _online_users()
@@ -473,6 +603,7 @@ def register_chat_party(app, db_path=None):
         clean = _clean_text(data.get("text"))
         if not clean:
             return jsonify({"ok": False, "error": "empty_text"}), 400
+        _ensure_chat_ready()
         try:
             ident = _touch(hwid, discord_id, license_key, display_name)
             if not ident.get("discord_id"):
@@ -502,6 +633,7 @@ def register_chat_party(app, db_path=None):
                     while len(party["messages"]) > MAX_MESSAGES:
                         party["messages"].pop(0)
                     send_dedup[dedup_key] = {"text": clean, "ts": ts, "message": msg}
+                _save_party_msg(scope_code, msg)
                 _log_embed("💬 Party Chat Message", 0x3498DB, [
                     ("User", _user_field(ident)),
                     ("License Key", _key_field(ident.get("license_key"))),
@@ -518,6 +650,7 @@ def register_chat_party(app, db_path=None):
                 while len(global_messages) > MAX_MESSAGES:
                     global_messages.pop(0)
                 send_dedup[dedup_key] = {"text": clean, "ts": ts, "message": msg}
+            _save_global_msg(msg)
             _log_embed("💬 Global Chat Message", 0x2ECC71, [
                 ("User", _user_field(ident)),
                 ("License Key", _key_field(ident.get("license_key"))),
@@ -537,6 +670,7 @@ def register_chat_party(app, db_path=None):
         hwid, discord_id, license_key, display_name = _req_identity(data)
         if not (hwid or discord_id or license_key):
             return jsonify({"ok": False, "error": "missing_identity"}), 400
+        _ensure_chat_ready()
         try:
             _touch(hwid, discord_id, license_key, display_name)
             key = discord_id or hwid or license_key
@@ -579,6 +713,7 @@ def register_chat_party(app, db_path=None):
         hwid, discord_id, license_key, display_name = _req_identity(data)
         if not (hwid or discord_id or license_key):
             return jsonify({"ok": False, "error": "missing_identity"}), 400
+        _ensure_chat_ready()
         try:
             ident = _touch(hwid, discord_id, license_key, display_name)
             if not ident.get("discord_id"):
@@ -605,6 +740,7 @@ def register_chat_party(app, db_path=None):
                                  "messages": [], "members": {key: now}}
                 member_party[key] = code
                 party = parties[code]
+            _save_party_members(code)
             _log_embed("🎉 Party Created", 0x9B59B6, [
                 ("User", _user_field(ident)),
                 ("License Key", _key_field(ident.get("license_key"))),
@@ -624,6 +760,7 @@ def register_chat_party(app, db_path=None):
         hwid, discord_id, license_key, display_name = _req_identity(data)
         if not (hwid or discord_id or license_key):
             return jsonify({"ok": False, "error": "missing_identity"}), 400
+        _ensure_chat_ready()
         clean_code = "".join(c for c in str(data.get("code") or "") if c.isdigit())[:4]
         with lock:
             party = parties.get(clean_code)
@@ -634,10 +771,15 @@ def register_chat_party(app, db_path=None):
             if not ident.get("discord_id"):
                 return jsonify({"ok": False, "error": "unknown_user"}), 403
             key = discord_id or hwid or license_key
+            with lock:
+                old_code = member_party.get(key)
             _leave_party(key)
+            if old_code:
+                _save_party_members(old_code)
             with lock:
                 party["members"][key] = time.time()
                 member_party[key] = clean_code
+            _save_party_members(clean_code)
             _log_embed("➡️ Party Join", 0x2ECC71, [
                 ("User", _user_field(ident)),
                 ("License Key", _key_field(ident.get("license_key"))),
@@ -657,6 +799,7 @@ def register_chat_party(app, db_path=None):
         hwid, discord_id, license_key, display_name = _req_identity(data)
         if not (hwid or discord_id or license_key):
             return jsonify({"ok": False, "error": "missing_identity"}), 400
+        _ensure_chat_ready()
         try:
             _touch(hwid, discord_id, license_key, display_name)
             _leave_party(discord_id or hwid or license_key, log_it=True)
