@@ -1229,6 +1229,14 @@ def start_api_server():
     threading.Thread(target=run_flask, daemon=True).start()
 
 
+# ---- Chat + Party API (menu) ----
+try:
+    from chat_party import register_chat_party
+    register_chat_party(app)
+except Exception as _chat_err:
+    print(f"[CHAT] mount failed: {_chat_err}")
+
+
 # ══════════════════════════════════════════════════════════════
 #  Discord Bot  –  Commands
 # ══════════════════════════════════════════════════════════════
