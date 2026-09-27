@@ -1160,11 +1160,11 @@ class StaffList(commands.Cog):
 
     @staticmethod
     def _member_line(m: discord.Member) -> str:
-        """z.B.  > **Snow** · `snow`   (Anzeigename fett, Username klein daneben)"""
-        display = discord.utils.escape_markdown(m.display_name)
-        if m.display_name.lower() != m.name.lower():
-            return f"> **{display}** · `{m.name}`"
-        return f"> **{display}**"
+        """Blauer, klickbarer Name → öffnet das Profil in Discord.
+        (Echte @Erwähnungen zeigen in Embeds bei manchen Usern nur "<@ID>".)"""
+        display = m.display_name.replace("[", "(").replace("]", ")")
+        display = discord.utils.escape_markdown(display)
+        return f"> [{display}](https://discord.com/users/{m.id})"
 
     # ── Senden / Bearbeiten ───────────────────────────────────
 
