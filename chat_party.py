@@ -225,11 +225,20 @@ def _is_expired(expires_at):
         return True
 
 
-def _avatar_url(discord_id, avatar_hash, size=64):
-    if not avatar_hash:
-        return ""
-    ext = "gif" if str(avatar_hash).startswith("a_") else "png"
-    return "https://cdn.discordapp.com/avatars/%s/%s.%s?size=%d" % (discord_id, avatar_hash, ext, size)
+def _avatar_url(discord_id, avatar_hash, discriminator=None, size=64):
+    if avatar_hash:
+        ext = "gif" if str(avatar_hash).startswith("a_") else "png"
+        return "https://cdn.discordapp.com/avatars/%s/%s.%s?size=%d" % (discord_id, avatar_hash, ext, size)
+    # no custom avatar -> Discord default avatar (always a valid picture)
+    idx = 0
+    try:
+        if discriminator is not None and str(discriminator) != "0":
+            idx = int(str(discriminator)) % 5
+        else:
+            idx = (int(str(discord_id)) >> 22) % 6
+    except Exception:
+        idx = 0
+    return "https://cdn.discordapp.com/embed/avatars/%d.png" % idx
 
 
 def register_chat_party(app, db_path=None):
@@ -328,7 +337,7 @@ def register_chat_party(app, db_path=None):
                         "plan": str(duration_type or "lifetime").lower(),
                         "discord_id": did or None,
                         "license_key": lic,
-                        "avatar": _avatar_url(did, (user or {}).get("avatar", "")),
+                        "avatar": _avatar_url(did, (user or {}).get("avatar", ""), (user or {}).get("discriminator")),
                         "expires_text": _expires_text(expires_at),
                     }
         except Exception:
