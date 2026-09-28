@@ -14,12 +14,31 @@ import base64
 import sqlite3
 from flask import Flask, jsonify, request, render_template
 
+
+# Windows: "Markieren"-Modus (QuickEdit) in der Konsole ausschalten.
+# Sonst friert der KOMPLETTE Bot ein, sobald man ins schwarze Fenster klickt
+# (print() blockiert) -> keine Logs, keine Updates mehr, bis man Enter drückt.
+if os.name == "nt":
+    try:
+        import ctypes
+        _k32 = ctypes.windll.kernel32
+        _h = _k32.GetStdHandle(-10)            # STD_INPUT_HANDLE
+        _mode = ctypes.c_uint32()
+        if _k32.GetConsoleMode(_h, ctypes.byref(_mode)):
+            # QuickEdit (0x40) aus, Extended Flags (0x80) an
+            _k32.SetConsoleMode(_h, (_mode.value & ~0x0040) | 0x0080)
+    except Exception:
+        pass
+
 # ══════════════════════════════════════════════════════════════
 #  RAYX Bot – Config
 # ══════════════════════════════════════════════════════════════
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True          # NEU: für Join/Leave/Nickname/Timeout-Logs (Server Members Intent im Dev-Portal aktivieren!)
+intents.guilds = True           # NEU: Rollen-/Channel-Events
+intents.moderation = True       # NEU: Ban/Unban-Events
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # — Channel IDs —
@@ -318,9 +337,29 @@ def sync_db_from_gist():
         print(f"[DB] Gist-Download fehlgeschlagen: {e}")
 
 
+_gist_lock = threading.Lock()
+_gist_pending = threading.Event()
+
+
 def sync_db_to_gist():
+    """Startet den Gist-Upload im Hintergrund (blockiert den Bot nicht mehr).
+    Mehrere Aufrufe kurz hintereinander werden zu einem Upload zusammengefasst."""
     if not GIST_ID or not GIST_TOKEN:
         return
+    _gist_pending.set()
+    if _gist_lock.locked():
+        return
+
+    def _worker():
+        with _gist_lock:
+            while _gist_pending.is_set():
+                _gist_pending.clear()
+                _sync_db_to_gist_blocking()
+
+    threading.Thread(target=_worker, daemon=True).start()
+
+
+def _sync_db_to_gist_blocking():
     try:
         encoded = gist_database_payload()
         body = json.dumps({"files": {"bot_data.json": {"content": encoded}}}).encode()
@@ -2332,8 +2371,9 @@ async def _post_embed(channel_id, guild_id, title_filter, build_fn, view=None):
     channel = guild.get_channel(channel_id)
     if not channel:
         return
+    # Embed im Hintergrund bauen (DB + API-Check blockieren sonst den ganzen Bot)
+    result = await asyncio.to_thread(build_fn)
     await channel.purge(check=lambda m: m.embeds and m.embeds[0].title and title_filter in m.embeds[0].title, limit=5)
-    result = build_fn()
     if isinstance(result, list):
         for e in result:
             await channel.send(embed=e)
@@ -2350,9 +2390,14 @@ async def _embed_loop(channel_id, guild_id, title_filter, build_fn, view=None, i
         await asyncio.sleep(interval)
         try:
             await _post_embed(channel_id, guild_id, title_filter, build_fn, view)
-        except Exception as e:
-            print(f"[LOOP] {title_filter}: {e}")
+        except asyncio.CancelledError:
+            raise
+        except BaseException as e:      # Loop darf nie sterben
+            print(f"[LOOP] {title_filter}: {type(e).__name__}: {e}")
             await asyncio.sleep(10)
+
+
+_started = False
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2361,7 +2406,15 @@ async def _embed_loop(channel_id, guild_id, title_filter, build_fn, view=None, i
 
 @bot.event
 async def on_ready():
+    global _started
     print(f"[BOT] Online als {bot.user} in {len(bot.guilds)} Guild(s)")
+
+    # on_ready kommt nach jedem Reconnect erneut -> Setup nur EINMAL,
+    # sonst doppelte Loops + API-Server-Neustart auf belegtem Port
+    if _started:
+        print("[BOT] Reconnect – Loops laufen weiter")
+        return
+    _started = True
 
     await send_bot_log("Bot gestartet", f"Online als `{bot.user}`")
 
@@ -2374,12 +2427,18 @@ async def on_ready():
     start_api_server()
     print("[API] Server gestartet auf Port 5000")
 
-    # Initiale Embeds posten
-    await _post_embed(PURGE_CHANNEL_ID, GUILD_ID, "Key Verwaltung", build_admin_menu_embed, AdminMenuView())
-    await _post_embed(WHITELIST_CHANNEL_ID, GUILD_ID, "Whitelist Verwaltung", build_whitelist_menu_embed, WhitelistMenuView())
-    await _post_embed(USER_CHECK_CHANNEL_ID, GUILD_ID, "User Prüfen", build_user_check_embed, UserCheckView())
-    await _post_embed(KEYS_OVERVIEW_CHANNEL_ID, GUILD_ID, "Key Übersicht", build_keys_overview_embeds)
-    await _post_embed(BOT_STATUS_CHANNEL_ID, GUILD_ID, "RAYX Status", build_bot_status_embed)
+    # Initiale Embeds posten – ein Fehler stoppt nicht mehr den Rest (vorher starteten dann keine Loops)
+    for args in (
+        (PURGE_CHANNEL_ID, GUILD_ID, "Key Verwaltung", build_admin_menu_embed, AdminMenuView()),
+        (WHITELIST_CHANNEL_ID, GUILD_ID, "Whitelist Verwaltung", build_whitelist_menu_embed, WhitelistMenuView()),
+        (USER_CHECK_CHANNEL_ID, GUILD_ID, "User Prüfen", build_user_check_embed, UserCheckView()),
+        (KEYS_OVERVIEW_CHANNEL_ID, GUILD_ID, "Key Übersicht", build_keys_overview_embeds),
+        (BOT_STATUS_CHANNEL_ID, GUILD_ID, "RAYX Status", build_bot_status_embed),
+    ):
+        try:
+            await _post_embed(*args)
+        except Exception as e:
+            print(f"[START] {args[2]}: {type(e).__name__}: {e}")
 
     # Periodische Loops starten
     bot.loop.create_task(_embed_loop(PURGE_CHANNEL_ID, GUILD_ID, "Key Verwaltung", build_admin_menu_embed, AdminMenuView()))
@@ -2416,6 +2475,18 @@ async def on_message(message):
             "timestamp": datetime.now()
         })
     await bot.process_commands(message)
+
+
+# ══════════════════════════════════════════════════════════════
+#  NEU: Server-Features (Server-Logging, Ankündigungs-System, /send)
+#  → komplett in server_features.py, bestehender Code bleibt unverändert
+# ══════════════════════════════════════════════════════════════
+
+try:
+    from server_features import install_server_features
+    install_server_features(bot)
+except Exception as _sf_err:
+    print(f"[SERVER-FEATURES] konnte nicht geladen werden: {_sf_err}")
 
 
 # ══════════════════════════════════════════════════════════════

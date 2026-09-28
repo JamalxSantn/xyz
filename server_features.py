@@ -273,7 +273,7 @@ class ServerLogger(commands.Cog):
         except discord.Forbidden:
             print("[SERVER-LOG] Keine Rechte im Log-Channel (Nachrichten senden / Links einbetten).")
         except Exception as e:
-            print(f"[SERVER-LOG] Fehler: {e}")
+            print(f"[SERVER-LOG] Fehler: {type(e).__name__}: {e}")
 
     async def audit(self, guild: discord.Guild, action: discord.AuditLogAction,
                     target_id: Optional[int] = None, max_age: float = 20.0,
@@ -1169,12 +1169,28 @@ class StaffList(commands.Cog):
     # ── Senden / Bearbeiten ───────────────────────────────────
 
     async def update(self) -> None:
+        # Timeout: hängt ein Discord-Request, bleibt sonst der Lock für immer belegt
+        # und die Liste aktualisiert sich NIE wieder.
+        try:
+            await asyncio.wait_for(self._update(), timeout=60)
+        except asyncio.TimeoutError:
+            print("[STAFF] Update-Timeout (60s) – nächster Versuch beim nächsten Durchlauf.")
+        except Exception as e:
+            print(f"[STAFF] Fehler: {type(e).__name__}: {e}")
+
+    async def _update(self) -> None:
         async with self._lock:
             channel = self.bot.get_channel(STAFF_LIST_CHANNEL_ID)
             if channel is None:
+                try:
+                    channel = await self.bot.fetch_channel(STAFF_LIST_CHANNEL_ID)
+                except discord.HTTPException:
+                    channel = None
+            if channel is None or getattr(channel, "guild", None) is None:
                 print(f"[STAFF] Channel {STAFF_LIST_CHANNEL_ID} nicht gefunden.")
                 return
-            embed = self.build_embed(channel.guild)
+            guild = self.bot.get_guild(channel.guild.id) or channel.guild
+            embed = self.build_embed(guild)
             try:
                 msg = None
                 if self._message_id:
@@ -1212,20 +1228,28 @@ class StaffList(commands.Cog):
 
     @commands.Cog.listener()
     async def on_ready(self):
-        await self.update()
-        if self._loop_task is None:
+        # Loop ZUERST starten – falls das erste Update fehlschlägt, läuft sie trotzdem
+        if self._loop_task is None or self._loop_task.done():
             async def _loop():
                 while True:
                     await asyncio.sleep(self.REFRESH_INTERVAL)
                     try:
                         await self.update()
-                    except Exception as e:
-                        print(f"[STAFF] Loop-Fehler: {e}")
+                    except asyncio.CancelledError:
+                        raise
+                    except BaseException as e:      # Loop darf nie sterben
+                        print(f"[STAFF] Loop-Fehler: {type(e).__name__}: {e}")
             self._loop_task = asyncio.create_task(_loop())
+        await self.update()
 
     def _is_staff_guild(self, guild) -> bool:
+        if guild is None:
+            return False
         ch = self.bot.get_channel(STAFF_LIST_CHANNEL_ID)
-        return ch is not None and guild is not None and ch.guild.id == guild.id
+        if ch is not None:
+            return ch.guild.id == guild.id
+        # Channel (noch) nicht im Cache -> Staff-Rollen auf diesem Server?
+        return any(guild.get_role(rid) for rid in self._role_ids)
 
     @commands.Cog.listener()
     async def on_member_update(self, before: discord.Member, after: discord.Member):
