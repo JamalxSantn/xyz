@@ -15,6 +15,13 @@ import sqlite3
 from flask import Flask, jsonify, request, render_template
 
 
+# Konsole sofort schreiben (Render puffert sonst print()-Ausgaben -> Fehler sind unsichtbar)
+try:
+    sys.stdout.reconfigure(line_buffering=True)
+    sys.stderr.reconfigure(line_buffering=True)
+except Exception:
+    pass
+
 # Windows: "Markieren"-Modus (QuickEdit) in der Konsole ausschalten.
 # Sonst friert der KOMPLETTE Bot ein, sobald man ins schwarze Fenster klickt
 # (print() blockiert) -> keine Logs, keine Updates mehr, bis man Enter drückt.
@@ -2224,10 +2231,10 @@ class WhitelistMenuView(discord.ui.View):
 class TicketSelect(discord.ui.Select):
     def __init__(self):
         options = [
-            discord.SelectOption(label="Kernel", description="Buy the Kernel Plan", emoji="<:rayx:1539179270335635487>", value="advanced_phone"),
-            discord.SelectOption(label="Support", description="Get help from our team", emoji="<:shield:1487061406728720464>", value="support"),
+            discord.SelectOption(label="Kernel", description="Buy the Kernel plan", value="advanced_phone"),
+            discord.SelectOption(label="Support", description="Help with setup errors or bugs", value="support"),
         ]
-        super().__init__(placeholder="Select an option", options=options, custom_id="ticket_select")
+        super().__init__(placeholder="Choose an option", options=options, custom_id="ticket_select")
 
     async def callback(self, interaction: discord.Interaction):
         type_name = "Kernel" if self.values[0] == "advanced_phone" else "Support"
@@ -2270,6 +2277,57 @@ class TicketView(discord.ui.View):
     def __init__(self):
         super().__init__(timeout=None)
         self.add_item(TicketSelect())
+
+
+# ── Ticket-Panel im Help-Center-Stil (Banner oben, Text, Kategorien, Auswahl) ──
+TICKET_BANNER_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ticket_banner.png")
+TICKET_PANEL_TITLE = "Rayx Support"
+TICKET_PANEL_INTRO = (
+    "**English**\n"
+    "Need help or want to buy a plan? Open a ticket below and our staff will get back to you.\n\n"
+    "**Deutsch**\n"
+    "Brauchst du Hilfe oder möchtest du einen Plan kaufen? Eröffne unten ein Ticket und unser Team meldet sich bei dir."
+)
+TICKET_PANEL_CATEGORIES = (
+    ("Kernel", "Buy the Kernel plan\nKernel Plan kaufen"),
+    ("Support", "Help with setup errors or bugs\nHilfe bei Setup Fehlern oder Bugs"),
+)
+TICKET_PANEL_FOOTER = "Rayx Support © 2026"
+
+HAS_COMPONENTS_V2 = hasattr(discord.ui, "LayoutView") and hasattr(discord.ui, "Container")
+
+if HAS_COMPONENTS_V2:
+    class TicketPanel(discord.ui.LayoutView):
+        """Neues Panel (discord.py 2.6+): alles in einem Block wie beim Help Center."""
+        def __init__(self):
+            super().__init__(timeout=None)
+            container = discord.ui.Container(accent_colour=discord.Colour(0xFFFFFF))
+            if os.path.isfile(TICKET_BANNER_FILE):
+                container.add_item(discord.ui.MediaGallery(discord.MediaGalleryItem("attachment://ticket_banner.png")))
+            container.add_item(discord.ui.TextDisplay(f"## {TICKET_PANEL_TITLE}"))
+            container.add_item(discord.ui.Separator())
+            container.add_item(discord.ui.TextDisplay(TICKET_PANEL_INTRO))
+            categories = "\n\n".join(
+                f"**{name}**\n" + "\n".join(f"> -# {line}" for line in text.split("\n"))
+                for name, text in TICKET_PANEL_CATEGORIES
+            )
+            container.add_item(discord.ui.TextDisplay(categories))
+            row = discord.ui.ActionRow()
+            row.add_item(TicketSelect())
+            container.add_item(row)
+            container.add_item(discord.ui.TextDisplay(f"-# {TICKET_PANEL_FOOTER}"))
+            self.add_item(container)
+
+
+def build_ticket_panel_embed():
+    """Fallback für ältere discord.py-Versionen (klassisches Embed)."""
+    embed = discord.Embed(title=TICKET_PANEL_TITLE, description=TICKET_PANEL_INTRO, color=0xFFFFFF)
+    for name, text in TICKET_PANEL_CATEGORIES:
+        embed.add_field(name=name, value="\n".join(f"> {line}" for line in text.split("\n")), inline=False)
+    if os.path.isfile(TICKET_BANNER_FILE):
+        embed.set_image(url="attachment://ticket_banner.png")
+    embed.set_footer(text=TICKET_PANEL_FOOTER)
+    return embed
 
 
 class TicketButtons(discord.ui.View):
@@ -2348,15 +2406,16 @@ async def ticket(ctx):
     if ctx.channel.id != TICKET_CHANNEL_ID:
         await ctx.send(embed=error_embed("Falscher Channel"), delete_after=5)
         return
-    embed = make_embed(
-        "RAYX Support",
-        "**English**\nNeed help or want to buy a plan? Open a ticket and our staff will get back to you!\n\n"
-        "**Deutsch**\nBrauchst du Hilfe oder möchtest einen Plan kaufen? Eröffne ein Ticket!",
-        thumbnail=False
-    )
-    embed.set_image(url=BANNER_URL)
-    embed.set_footer(text=f"{FOOTER_TEXT} Support")
-    await ctx.send(embed=embed, view=TicketView())
+    try:
+        await ctx.message.delete()
+    except discord.HTTPException:
+        pass
+    banner = discord.File(TICKET_BANNER_FILE, filename="ticket_banner.png") if os.path.isfile(TICKET_BANNER_FILE) else None
+    kwargs = {"file": banner} if banner else {}
+    if HAS_COMPONENTS_V2:
+        await ctx.send(view=TicketPanel(), **kwargs)
+    else:
+        await ctx.send(embed=build_ticket_panel_embed(), view=TicketView(), **kwargs)
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2423,6 +2482,8 @@ async def on_ready():
     # Persistent Views registrieren
     for view_cls in (AdminMenuView, UserMenuView, UserCheckView, WhitelistMenuView, TicketView, TicketButtons, DeleteTicketView):
         bot.add_view(view_cls())
+    if HAS_COMPONENTS_V2:
+        bot.add_view(TicketPanel())
 
     start_api_server()
     print("[API] Server gestartet auf Port 5000")

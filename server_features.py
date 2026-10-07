@@ -248,6 +248,40 @@ class ServerLogger(commands.Cog):
         # Nachrichten, die der Bot selbst löscht (Ankündigungs-Entwürfe) → nicht loggen
         self.suppressed_deletes: set[int] = set()
 
+    # ── Start-Check: zeigt in der Konsole, WARUM Logs evtl. nicht ankommen ──
+
+    @commands.Cog.listener()
+    async def on_ready(self):
+        if getattr(self, "_checked", False):
+            return
+        self._checked = True
+        guild = self.bot.get_guild(LOG_GUILD_ID)
+        if guild is None:
+            print(f"[SERVER-LOG] ❌ Bot ist NICHT auf dem Server {LOG_GUILD_ID} – dort wird nichts geloggt.")
+            return
+        print(f"[SERVER-LOG] Server: {guild.name} ({guild.id}) · Mitglieder im Cache: {len(guild.members)}/{guild.member_count}")
+        channel = guild.get_channel(SERVER_LOG_CHANNEL_ID)
+        if channel is None:
+            print(f"[SERVER-LOG] ❌ Log-Channel {SERVER_LOG_CHANNEL_ID} nicht gefunden oder Bot kann ihn nicht sehen.")
+            return
+        perms = channel.permissions_for(guild.me)
+        missing = [n for n, ok in (
+            ("Kanal ansehen", perms.view_channel),
+            ("Nachrichten senden", perms.send_messages),
+            ("Links einbetten", perms.embed_links),
+        ) if not ok]
+        if not guild.me.guild_permissions.view_audit_log:
+            print("[SERVER-LOG] ⚠️ Bot hat kein 'Audit-Log anzeigen' – 'Ausgeführt von' fehlt in den Logs.")
+        if missing:
+            print(f"[SERVER-LOG] ❌ Im Log-Channel #{channel.name} fehlen Rechte: {', '.join(missing)}")
+            return
+        try:
+            await channel.send(embed=log_embed("🟢  Server-Logs aktiv", C_INFO,
+                                               description="Bot wurde gestartet, Server-Logs laufen."))
+            print(f"[SERVER-LOG] ✅ Logs gehen in #{channel.name}")
+        except Exception as e:
+            print(f"[SERVER-LOG] ❌ Test-Nachricht fehlgeschlagen: {type(e).__name__}: {e}")
+
     # ── Infrastruktur ─────────────────────────────────────────
 
     def _relevant(self, guild: Optional[discord.Guild]) -> bool:
@@ -258,7 +292,8 @@ class ServerLogger(commands.Cog):
         if ch is None:
             try:
                 ch = await self.bot.fetch_channel(SERVER_LOG_CHANNEL_ID)
-            except discord.HTTPException:
+            except discord.HTTPException as e:
+                print(f"[SERVER-LOG] Channel {SERVER_LOG_CHANNEL_ID} nicht abrufbar: {e}")
                 return None
         return ch
 
