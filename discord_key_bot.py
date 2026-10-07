@@ -248,20 +248,58 @@ def send_inject_log_sync(discord_id, key):
         print(f"[INJECT-LOG] Fehler: {e}")
 
 
-async def send_ticket_log(message):
-    """Log für das Ticket-System."""
+TICKET_LOG_STYLES = {
+    "opened":  ("Ticket opened",  0x2ECC71),
+    "closed":  ("Ticket closed",  0xF1C40F),
+    "deleted": ("Ticket deleted", 0xE74C3C),
+}
+
+
+def _user_block(user):
+    """Mention + Name + Discord ID untereinander."""
+    if user is None:
+        return "> Unknown"
+    return f"> {user.mention}\n> `{user.name}`\n> ID `{user.id}`"
+
+
+async def send_ticket_log(action, *, user=None, channel=None, ticket_type=None,
+                          opened_by=None, created_at=None):
+    """Sauberes Ticket-Log: wer, welche Discord ID, welcher Typ, welcher Channel, wann."""
     try:
-        guild = bot.get_guild(TICKET_GUILD_ID)
-        if not guild:
-            return
-        channel = guild.get_channel(TICKET_LOG_CHANNEL_ID)
-        if not channel:
-            return
-        embed = discord.Embed(description=message, color=BRAND_COLOR, timestamp=datetime.now())
-        embed.set_footer(text=f"{FOOTER_TEXT} Logs")
-        await channel.send(embed=embed)
+        log_channel = bot.get_channel(TICKET_LOG_CHANNEL_ID)
+        if log_channel is None:
+            log_channel = await bot.fetch_channel(TICKET_LOG_CHANNEL_ID)
+        title, color = TICKET_LOG_STYLES.get(action, (action, BRAND_COLOR))
+        now = int(datetime.now().timestamp())
+
+        embed = discord.Embed(title=title, color=color, timestamp=datetime.now())
+        if user is not None:
+            embed.set_author(name=user.name, icon_url=user.display_avatar.url)
+            embed.set_thumbnail(url=user.display_avatar.url)
+
+        label = {"opened": "Opened by", "closed": "Closed by", "deleted": "Deleted by"}.get(action, "User")
+        embed.add_field(name=label, value=_user_block(user), inline=True)
+        if opened_by is not None and (user is None or opened_by.id != user.id):
+            embed.add_field(name="Opened by", value=_user_block(opened_by), inline=True)
+
+        if ticket_type:
+            embed.add_field(name="Category", value=f"> {ticket_type}", inline=False)
+        if channel is not None:
+            chan = channel.mention if action != "deleted" else f"`#{channel.name}`"
+            embed.add_field(name="Channel", value=f"> {chan}\n> ID `{channel.id}`", inline=False)
+
+        time_value = f"> <t:{now}:F>"
+        if created_at:
+            try:
+                opened_ts = int(datetime.fromisoformat(created_at).timestamp())
+                time_value += f"\n> Opened <t:{opened_ts}:R>"
+            except ValueError:
+                pass
+        embed.add_field(name="Time", value=time_value, inline=False)
+        embed.set_footer(text="Rayx Ticket Logs")
+        await log_channel.send(embed=embed, allowed_mentions=discord.AllowedMentions.none())
     except Exception as e:
-        print(f"[TICKET-LOG] Fehler: {e}")
+        print(f"[TICKET-LOG] Fehler: {type(e).__name__}: {e}")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -2228,13 +2266,48 @@ class WhitelistMenuView(discord.ui.View):
 #  Ticket System
 # ══════════════════════════════════════════════════════════════
 
+# Server-Emojis für das Auswahlmenü.
+# Am sichersten mit ID: in Discord  \:RAYX1:  schreiben -> ergibt <:RAYX1:123...>  -> hier eintragen.
+# Ist keine ID eingetragen, sucht der Bot das Emoji per Namen auf allen seinen Servern.
+TICKET_EMOJIS = {
+    "private":        ("RAYX1", ""),
+    "advanced_phone": ("RAYX1", ""),
+    "support":        ("web",   ""),
+}
+_emoji_warned = set()
+
+
+def _ticket_emoji(value):
+    name, emoji_id = TICKET_EMOJIS.get(value, ("", ""))
+    if emoji_id:
+        return discord.PartialEmoji(name=name, id=int(emoji_id))
+    if not name:
+        return None
+    guild = bot.get_guild(TICKET_GUILD_ID)
+    pools = ([guild.emojis] if guild else []) + [bot.emojis]
+    for pool in pools:
+        emoji = discord.utils.get(pool, name=name) or next(
+            (e for e in pool if e.name.lower() == name.lower()), None)
+        if emoji:
+            return emoji
+    if name not in _emoji_warned and bot.is_ready():
+        _emoji_warned.add(name)
+        print(f"[TICKET] Emoji '{name}' nicht gefunden. Der Bot muss auf dem Server mit dem Emoji sein "
+              f"oder trag die ID in TICKET_EMOJIS ein.")
+    return None
+
+
 class TicketSelect(discord.ui.Select):
     def __init__(self):
         options = [
+            discord.SelectOption(label="Private", description="Buy the Private plan", value="private"),
             discord.SelectOption(label="Kernel", description="Buy the Kernel plan", value="advanced_phone"),
             discord.SelectOption(label="Support", description="Help with setup errors or bugs", value="support"),
-            discord.SelectOption(label="Private", description="Private request for the team", value="private"),
         ]
+        for opt in options:
+            emoji = _ticket_emoji(opt.value)
+            if emoji:
+                opt.emoji = emoji
         super().__init__(placeholder="Choose an option", options=options, custom_id="ticket_select")
 
     async def callback(self, interaction: discord.Interaction):
@@ -2279,7 +2352,7 @@ class TicketSelect(discord.ui.Select):
             embed.set_footer(text=TICKET_PANEL_FOOTER)
             await ticket_channel.send(content=member.mention, embed=embed, view=TicketButtons())
         await interaction.followup.send(f"Your ticket has been created {ticket_channel.mention}", ephemeral=True)
-        await send_ticket_log(f"**New Ticket**\n> By: {member}\n> Type: {type_name}\n> Channel: {ticket_channel.mention}")
+        await send_ticket_log("opened", user=member, channel=ticket_channel, ticket_type=type_name)
 
 
 class TicketView(discord.ui.View):
@@ -2298,9 +2371,9 @@ TICKET_PANEL_INTRO = (
     "Brauchst du Hilfe oder möchtest du einen Plan kaufen? Eröffne unten ein Ticket und unser Team meldet sich bei dir."
 )
 TICKET_PANEL_CATEGORIES = (
+    ("Private", "Buy the Private plan\nPrivate Plan kaufen"),
     ("Kernel", "Buy the Kernel plan\nKernel Plan kaufen"),
     ("Support", "Help with setup errors or bugs\nHilfe bei Setup Fehlern oder Bugs"),
-    ("Private", "Private request for the team\nPrivate Anfrage an das Team"),
 )
 # Auswahl-Wert -> (Anzeigename, Kategorie)   Private landet in derselben Kategorie wie Kernel
 TICKET_TYPES = {
@@ -2460,7 +2533,8 @@ class TicketButtons(discord.ui.View):
             embed.add_field(name="Category", value=ticket_data["type"], inline=True)
             embed.set_footer(text=TICKET_PANEL_FOOTER)
             await channel.send(embed=embed, view=DeleteTicketView())
-        await send_ticket_log(f"**Ticket closed**\n> By: {interaction.user}\n> Channel: {channel.mention}\n> Type: {ticket_data['type']}")
+        await send_ticket_log("closed", user=interaction.user, channel=channel, ticket_type=ticket_data["type"],
+                              opened_by=user, created_at=ticket_data.get("created_at"))
 
 
 class DeleteTicketView(discord.ui.View):
@@ -2469,7 +2543,7 @@ class DeleteTicketView(discord.ui.View):
 
     @discord.ui.button(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket_closed")
     async def delete_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await send_ticket_log(f"**Ticket deleted**\n> By: {interaction.user}\n> Channel: {interaction.channel.name}")
+        await send_ticket_log("deleted", user=interaction.user, channel=interaction.channel)
         try:
             await interaction.channel.delete()
         except Exception:
