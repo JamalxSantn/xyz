@@ -2233,17 +2233,21 @@ class TicketSelect(discord.ui.Select):
         options = [
             discord.SelectOption(label="Kernel", description="Buy the Kernel plan", value="advanced_phone"),
             discord.SelectOption(label="Support", description="Help with setup errors or bugs", value="support"),
+            discord.SelectOption(label="Private", description="Private request for the team", value="private"),
         ]
         super().__init__(placeholder="Choose an option", options=options, custom_id="ticket_select")
 
     async def callback(self, interaction: discord.Interaction):
-        type_name = "Kernel" if self.values[0] == "advanced_phone" else "Support"
+        choice = self.values[0]
+        type_name = TICKET_TYPES.get(choice, ("Support", SUPPORT_CATEGORY_ID))[0]
         member = interaction.user
         guild = interaction.guild
+        # Sofort bestätigen – Channel erstellen dauert manchmal >3s (sonst "Interaktion fehlgeschlagen")
+        await interaction.response.defer(ephemeral=True, thinking=True)
 
         existing = discord.utils.get(guild.text_channels, name=f"ticket-{member.name.lower()}")
         if existing:
-            await interaction.response.send_message(embed=error_embed("Ticket existiert bereits", f"{existing.mention}"), ephemeral=True)
+            await interaction.followup.send(f"You already have an open ticket {existing.mention}", ephemeral=True)
             return
 
         staff_role = guild.get_role(TICKET_STAFF_ROLE_ID)
@@ -2255,7 +2259,7 @@ class TicketSelect(discord.ui.Select):
         if staff_role:
             overwrites[staff_role] = discord.PermissionOverwrite(view_channel=True, send_messages=True, read_message_history=True, manage_messages=True)
 
-        category_id = ADVANCED_CATEGORY_ID if self.values[0] == "advanced_phone" else SUPPORT_CATEGORY_ID
+        category_id = TICKET_TYPES.get(choice, ("Support", SUPPORT_CATEGORY_ID))[1]
         category = guild.get_channel(category_id)
 
         ticket_channel = await guild.create_text_channel(name=f"ticket-{member.name.lower()}", overwrites=overwrites, category=category)
@@ -2264,12 +2268,17 @@ class TicketSelect(discord.ui.Select):
         save_ticket_data()
         ticket_messages[ticket_channel.id] = []
 
-        embed = make_embed(f"Ticket · {type_name}",
-                           f"Welcome {member.mention}.\n\nPlease describe your issue and a staff member will assist you shortly.",
-                           thumbnail=True)
-        embed.set_footer(text=f"{member} · {FOOTER_TEXT} Support")
-        await ticket_channel.send(content=member.mention, embed=embed, view=TicketButtons())
-        await interaction.response.defer()
+        if HAS_COMPONENTS_V2:
+            await ticket_channel.send(view=TicketWelcome(member, type_name),
+                                      allowed_mentions=discord.AllowedMentions(users=True))
+        else:
+            embed = discord.Embed(title=f"{type_name} Ticket", description=TICKET_WELCOME_TEXT, color=0xFFFFFF)
+            embed.add_field(name="Opened by", value=member.mention, inline=True)
+            embed.add_field(name="Category", value=type_name, inline=True)
+            embed.add_field(name="Opened", value=f"<t:{int(datetime.now().timestamp())}:R>", inline=True)
+            embed.set_footer(text=TICKET_PANEL_FOOTER)
+            await ticket_channel.send(content=member.mention, embed=embed, view=TicketButtons())
+        await interaction.followup.send(f"Your ticket has been created {ticket_channel.mention}", ephemeral=True)
         await send_ticket_log(f"**New Ticket**\n> By: {member}\n> Type: {type_name}\n> Channel: {ticket_channel.mention}")
 
 
@@ -2291,6 +2300,17 @@ TICKET_PANEL_INTRO = (
 TICKET_PANEL_CATEGORIES = (
     ("Kernel", "Buy the Kernel plan\nKernel Plan kaufen"),
     ("Support", "Help with setup errors or bugs\nHilfe bei Setup Fehlern oder Bugs"),
+    ("Private", "Private request for the team\nPrivate Anfrage an das Team"),
+)
+# Auswahl-Wert -> (Anzeigename, Kategorie)   Private landet in derselben Kategorie wie Kernel
+TICKET_TYPES = {
+    "advanced_phone": ("Kernel", ADVANCED_CATEGORY_ID),
+    "support":        ("Support", SUPPORT_CATEGORY_ID),
+    "private":        ("Private", ADVANCED_CATEGORY_ID),
+}
+TICKET_WELCOME_TEXT = (
+    "Please describe your request and our staff will help you soon.\n"
+    "Bitte beschreibe dein Anliegen und unser Team hilft dir gleich."
 )
 TICKET_PANEL_FOOTER = "Rayx Support © 2026"
 
@@ -2319,6 +2339,60 @@ if HAS_COMPONENTS_V2:
             self.add_item(container)
 
 
+if HAS_COMPONENTS_V2:
+    class _CloseTicketButton(discord.ui.Button):
+        def __init__(self):
+            super().__init__(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="close_ticket")
+
+        async def callback(self, interaction: discord.Interaction):
+            await TicketButtons().close_ticket.callback(interaction)
+
+    class _DeleteTicketButton(discord.ui.Button):
+        def __init__(self):
+            super().__init__(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket_closed")
+
+        async def callback(self, interaction: discord.Interaction):
+            await DeleteTicketView().delete_ticket.callback(interaction)
+
+    class TicketWelcome(discord.ui.LayoutView):
+        """Begrüßung im neuen Ticket: ein sauberer Block mit Infos + Close-Button."""
+        def __init__(self, member: discord.Member, type_name: str):
+            super().__init__(timeout=None)
+            c = discord.ui.Container(accent_colour=discord.Colour(0xFFFFFF))
+            c.add_item(discord.ui.TextDisplay(f"## {type_name} Ticket"))
+            c.add_item(discord.ui.Separator())
+            c.add_item(discord.ui.TextDisplay(f"Welcome {member.mention}\n\n{TICKET_WELCOME_TEXT}"))
+            c.add_item(discord.ui.Separator(visible=False))
+            c.add_item(discord.ui.TextDisplay(
+                f"**Opened by**\n> {member.mention}\n"
+                f"**Category**\n> {type_name}\n"
+                f"**Opened**\n> <t:{int(datetime.now().timestamp())}:R>"
+            ))
+            row = discord.ui.ActionRow()
+            row.add_item(_CloseTicketButton())
+            c.add_item(row)
+            c.add_item(discord.ui.TextDisplay(f"-# {TICKET_PANEL_FOOTER}"))
+            self.add_item(c)
+
+    class TicketClosed(discord.ui.LayoutView):
+        """Nachricht beim Schließen: Infos + Delete-Button in einem Block."""
+        def __init__(self, closed_by, opened_by, type_name: str):
+            super().__init__(timeout=None)
+            c = discord.ui.Container(accent_colour=discord.Colour(0xE74C3C))
+            c.add_item(discord.ui.TextDisplay("## Ticket closed"))
+            c.add_item(discord.ui.Separator())
+            c.add_item(discord.ui.TextDisplay(
+                f"**Closed by**\n> {closed_by.mention}\n"
+                f"**Opened by**\n> {opened_by.mention if opened_by else 'Unknown'}\n"
+                f"**Category**\n> {type_name}"
+            ))
+            row = discord.ui.ActionRow()
+            row.add_item(_DeleteTicketButton())
+            c.add_item(row)
+            c.add_item(discord.ui.TextDisplay(f"-# {TICKET_PANEL_FOOTER}"))
+            self.add_item(c)
+
+
 def build_ticket_panel_embed():
     """Fallback für ältere discord.py-Versionen (klassisches Embed)."""
     embed = discord.Embed(title=TICKET_PANEL_TITLE, description=TICKET_PANEL_INTRO, color=0xFFFFFF)
@@ -2336,13 +2410,15 @@ class TicketButtons(discord.ui.View):
 
     @discord.ui.button(label="Close Ticket", style=discord.ButtonStyle.danger, custom_id="close_ticket")
     async def close_ticket(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if not interaction.response.is_done():
+            await interaction.response.defer()
         channel = interaction.channel
         ticket_data = ticket_channels.get(channel.id)
         guild = interaction.guild
 
         if not ticket_data:
             if not channel.name.startswith("ticket-") or "-closed" in channel.name:
-                await interaction.response.send_message(embed=error_embed("Kein Ticket"), ephemeral=True)
+                await interaction.followup.send(embed=error_embed("Kein Ticket"), ephemeral=True)
                 return
             user = None
             for target, ov in channel.overwrites.items():
@@ -2355,7 +2431,7 @@ class TicketButtons(discord.ui.View):
                 "created_at": datetime.now().isoformat(),
             }
             if not user:
-                await interaction.response.send_message(embed=error_embed("Ticket-Owner nicht gefunden"), ephemeral=True)
+                await interaction.followup.send(embed=error_embed("Ticket-Owner nicht gefunden"), ephemeral=True)
                 return
 
         user = await bot.fetch_user(ticket_data["user_id"]) if ticket_data.get("user_id") else None
@@ -2374,17 +2450,17 @@ class TicketButtons(discord.ui.View):
         ticket_channels.pop(channel.id, None)
         save_ticket_data()
 
-        embed = make_embed("Ticket geschlossen", color=ACCENT_RED, thumbnail=False)
-        embed.add_field(name="Geschlossen von", value=str(interaction.user), inline=True)
-        embed.add_field(name="Erstellt von", value=str(user or "Unbekannt"), inline=True)
-        embed.add_field(name="Typ", value=ticket_data["type"], inline=True)
-        embed.set_footer(text=f"{FOOTER_TEXT} Support")
-        await channel.send(embed=embed)
+        if HAS_COMPONENTS_V2:
+            await channel.send(view=TicketClosed(interaction.user, user, ticket_data["type"]),
+                               allowed_mentions=discord.AllowedMentions.none())
+        else:
+            embed = discord.Embed(title="Ticket closed", color=ACCENT_RED)
+            embed.add_field(name="Closed by", value=interaction.user.mention, inline=True)
+            embed.add_field(name="Opened by", value=user.mention if user else "Unknown", inline=True)
+            embed.add_field(name="Category", value=ticket_data["type"], inline=True)
+            embed.set_footer(text=TICKET_PANEL_FOOTER)
+            await channel.send(embed=embed, view=DeleteTicketView())
         await send_ticket_log(f"**Ticket closed**\n> By: {interaction.user}\n> Channel: {channel.mention}\n> Type: {ticket_data['type']}")
-
-        delete_view = discord.ui.View(timeout=None)
-        delete_view.add_item(discord.ui.Button(label="Delete Ticket", style=discord.ButtonStyle.danger, custom_id="delete_ticket_closed"))
-        await channel.send(view=delete_view)
 
 
 class DeleteTicketView(discord.ui.View):
