@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Config Cloud — Panel</title>
+<style>
+:root{--bg:#0b0e14;--card:#131824;--border:#232c40;--txt:#e8ecf4;--mut:#8b94a7;--acc:#5b8cff;--red:#ff5d5d;--yel:#ffb020;--grn:#34d399}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:Inter,Segoe UI,Arial,sans-serif;min-height:100vh}
+header{display:flex;align-items:center;justify-content:space-between;padding:16px 24px;border-bottom:1px solid var(--border);position:sticky;top:0;background:rgba(11,14,20,.92);backdrop-filter:blur(8px);z-index:5}
+.brand{font-weight:800;font-size:18px;letter-spacing:.3px}.brand span{color:var(--acc)}
+.wrap{max-width:1150px;margin:0 auto;padding:24px}
+.card{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:20px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px;margin-bottom:16px}
+.stat{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:14px}
+.stat small{color:var(--mut);text-transform:uppercase;font-size:11px;letter-spacing:.6px}
+.stat b{font-size:24px;display:block;margin-top:4px}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px}
+input,button{font:inherit}
+input[type=text],input[type=password]{background:#0d1220;border:1px solid var(--border);color:var(--txt);border-radius:10px;padding:10px 12px;outline:none;min-width:0}
+input:focus{border-color:var(--acc)}
+button{background:var(--acc);border:0;color:#fff;border-radius:10px;padding:10px 14px;cursor:pointer;font-weight:700}
+button.ghost{background:transparent;border:1px solid var(--border);color:var(--txt)}
+button.danger{background:rgba(255,93,93,.14);border:1px solid rgba(255,93,93,.4);color:#ff8a8a}
+button.warn{background:rgba(255,176,32,.13);border:1px solid rgba(255,176,32,.4);color:#ffcf7a}
+button:disabled{opacity:.5;cursor:default}
+table{width:100%;border-collapse:collapse;font-size:14px}
+th,td{text-align:left;padding:10px 8px;border-bottom:1px solid var(--border);vertical-align:top}
+th{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.6px}
+.hwid{font-family:Consolas,monospace;font-weight:700}
+.badge{display:inline-block;font-size:11px;font-weight:800;padding:2px 8px;border-radius:99px;background:rgba(52,211,153,.15);color:var(--grn);border:1px solid rgba(52,211,153,.35);margin-left:8px}
+.mut{color:var(--mut)}.row-actions{display:flex;gap:6px;flex-wrap:wrap}
+.row-actions button{padding:6px 10px;font-size:13px}
+#login{max-width:380px;margin:8vh auto}
+#login h1{margin-bottom:6px}#login p{color:var(--mut);margin-bottom:14px;font-size:14px}
+#app{display:none}
+.toast{position:fixed;bottom:18px;right:18px;background:#101828;border:1px solid var(--border);padding:12px 16px;border-radius:12px;display:none;max-width:340px}
+pre.view{background:#0d1220;border:1px solid var(--border);border-radius:10px;padding:12px;overflow:auto;max-height:420px;font-size:12px}
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;padding:20px;z-index:20}
+.modal{background:var(--card);border:1px solid var(--border);border-radius:14px;max-width:760px;width:100%;padding:18px;max-height:88vh;overflow:auto}
+.modal h3{margin-bottom:10px}
+.live{width:9px;height:9px;border-radius:99px;background:var(--grn);display:inline-block;margin-right:6px;animation:pl 1.6s infinite}
+@keyframes pl{50%{opacity:.3}}
+@media(max-width:760px){table,thead,tbody,th,td,tr{display:block}thead{display:none}td{border:0;padding:4px 0}tr{border-bottom:1px solid var(--border);padding:10px 0;display:block}}
+</style>
+</head>
+<body>
+<header>
+  <div class="brand">CONFIG<span>CLOUD</span> <span class="mut" style="font-weight:400;font-size:13px">panel</span></div>
+  <div id="hdr"><span class="mut" style="font-size:13px"><span class="live"></span><span id="connTxt">live</span> <span id="whoTxt"></span></span>
+  <button class="ghost" id="btnLogout" style="margin-left:10px;display:none">Logout</button></div>
+</header>
+
+<div class="wrap">
+  <!-- LOGIN -->
+  <div id="login" class="card">
+    <h1>Login</h1>
+    <p>Panel-Account einloggen. Accounts werden per Discord-Befehl erstellt.</p>
+    <input type="text" id="user" placeholder="Username" autocomplete="username" style="width:100%;margin-bottom:10px">
+    <input type="password" id="pw" placeholder="Passwort" autocomplete="current-password" style="width:100%;margin-bottom:10px">
+    <button id="btnLogin" style="width:100%">Einloggen</button>
+    <p class="mut" id="loginErr" style="margin-top:10px;color:#ff8a8a"></p>
+  </div>
+
+  <!-- APP -->
+  <div id="app">
+    <div class="stats">
+      <div class="stat"><small>Total Configs</small><b id="sTotal">0</b></div>
+      <div class="stat"><small>Heute erstellt</small><b id="sToday">0</b></div>
+      <div class="stat"><small>Neu (10 Min)</small><b id="sNew">0</b></div>
+      <div class="stat"><small>Auto-Refresh</small><b style="font-size:15px">alle 5s</b></div>
+    </div>
+
+    <div class="card">
+      <div class="toolbar">
+        <input type="text" id="q" placeholder="Suchen: HWID / PC-Name / User / IP ..." style="flex:1;min-width:220px">
+        <button class="ghost" id="btnReload">Neu laden</button>
+        <label class="mut" style="display:flex;align-items:center;gap:6px;font-size:13px"><input type="checkbox" id="auto" checked> Auto</label>
+      </div>
+      <div style="overflow:auto">
+      <table>
+        <thead><tr><th>HWID / PC</th><th>Windows-User</th><th>IP / Zeiten</th><th>Aktionen</th></tr></thead>
+        <tbody id="rows"><tr><td colspan="4" class="mut">Lade ...</td></tr></tbody>
+      </table>
+      </div>
+    </div>
+    <p class="mut" style="margin-top:12px;font-size:12px">Löschen = Config komplett entfernen. Zurücksetzen = Config leeren (Cheat startet mit Defaults, keine lokale Datei). Neue Configs erscheinen automatisch oben.</p>
+  </div>
+</div>
+
+<div class="modal-bg" id="modalBg"><div class="modal">
+  <h3 id="mTitle">Config</h3>
+  <div class="mut" id="mMeta" style="font-size:13px;margin-bottom:10px"></div>
+  <pre class="view" id="mBody">{}</pre>
+  <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end">
+    <button class="ghost" id="mClose">Schließen</button>
+  </div>
+</div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $=id=>document.getElementById(id);
+let TOKEN=localStorage.getItem('cc_panel_token')||'';
+let DATA=[];
+function toast(m){const t=$('toast');t.textContent=m;t.style.display='block';clearTimeout(t._h);t._h=setTimeout(()=>t.style.display='none',2600)}
+function headers(){return{'Content-Type':'application/json','x-admin-token':TOKEN}}
+function showLogin(v){$('login').style.display=v?'block':'none';$('app').style.display=v?'none':'block';$('btnLogout').style.display=v?'none':'inline-block'}
+async function api(p,o={}){const r=await fetch(p,{...o,headers:{...headers(),...(o.headers||{})}});let j;try{j=await r.json()}catch{j={success:false}};if(r.status===401){logout();throw new Error('unauthorized')}if(!r.ok&&!j.error)j.error='http '+r.status;return j}
+function logout(){TOKEN='';localStorage.removeItem('cc_panel_token');localStorage.removeItem('cc_panel_user');$('whoTxt').textContent='';showLogin(true)}
+$('btnLogout').onclick=logout;
+$('mClose').onclick=()=>$('modalBg').style.display='none';
+$('modalBg').onclick=e=>{if(e.target.id==='modalBg')$('modalBg').style.display='none'};
+
+async function doLogin(){
+  const u=$('user').value.trim();
+  const pw=$('pw').value;
+  $('loginErr').textContent='';
+  try{
+    const r=await fetch('/admin/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({username:u,password:pw})});
+    const j=await r.json();
+    if(j.success){
+      TOKEN=j.token;
+      localStorage.setItem('cc_panel_token',TOKEN);
+      localStorage.setItem('cc_panel_user',j.username||u);
+      $('pw').value='';
+      $('whoTxt').textContent='• '+(j.username||u);
+      showLogin(false);load();toast('Eingeloggt');
+    }
+    else $('loginErr').textContent=j.error==='no accounts yet - create one with !panelcreate'?'Noch kein Account vorhanden. Erstelle einen im Discord: !panelcreate <username> <passwort>':'Falscher Username oder Passwort';
+  }catch{$('loginErr').textContent='Server nicht erreichbar'}
+}
+$('btnLogin').onclick=doLogin;
+$('pw').onkeydown=e=>{if(e.key==='Enter')doLogin()};
+$('user').onkeydown=e=>{if(e.key==='Enter')doLogin()};
+
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function fmtT(iso){if(!iso)return '—';try{const d=new Date(iso);return d.toLocaleString('de-DE')}catch{return iso}}
+
+async function load(){
+  try{
+    const j=await api('/admin/configs');
+    DATA=j.configs||[];
+    render();
+    $('connTxt').textContent='live • '+DATA.length+' configs';
+  }catch(e){$('connTxt').textContent='offline';}
+}
+function render(){
+  const q=$('q').value.trim().toLowerCase();
+  const f=DATA.filter(c=>!q||(c.hwid+' '+(c.pcName||'')+' '+(c.windowsUser||'')+' '+(c.ip||'')).toLowerCase().includes(q));
+  const today=new Date().toDateString();
+  $('sTotal').textContent=DATA.length;
+  $('sToday').textContent=DATA.filter(c=>c.createdAt&&new Date(c.createdAt).toDateString()===today).length;
+  $('sNew').textContent=DATA.filter(c=>c.isNew).length;
+  if(!f.length){$('rows').innerHTML='<tr><td colspan="4" class="mut">Keine Configs gefunden.</td></tr>';return}
+  $('rows').innerHTML=f.map(c=>`<tr>
+    <td><span class="hwid">${esc(c.hwid)}</span>${c.isNew?'<span class="badge">NEU</span>':''}<br><span class="mut">🖥 ${esc(c.pcName||'—')} • ${c.configSize||0} bytes</span></td>
+    <td>${esc(c.windowsUser||'—')}</td>
+    <td class="mut" style="font-size:12px">${esc(c.ip||'')}<br>erstellt: ${esc(fmtT(c.createdAt))}<br>update: ${esc(fmtT(c.updatedAt))}</td>
+    <td><div class="row-actions">
+      <button class="ghost" onclick="view('${esc(c.hwid)}')">Ansehen</button>
+      <button class="warn" onclick="resetCfg('${esc(c.hwid)}')">Zurücksetzen</button>
+      <button class="danger" onclick="delCfg('${esc(c.hwid)}')">Löschen</button>
+    </div></td></tr>`).join('');
+}
+$('q').oninput=render;
+$('btnReload').onclick=load;
+
+async function view(hwid){
+  try{
+    const j=await api('/admin/configs/'+encodeURIComponent(hwid));
+    $('mTitle').textContent=hwid;
+    $('mMeta').textContent=`PC: ${j.entry.pcName||'—'} • User: ${j.entry.windowsUser||'—'} • IP: ${j.entry.ip||''} • Updated: ${fmtT(j.entry.updatedAt)}`;
+    $('mBody').textContent=JSON.stringify(j.entry.config||{},null,2);
+    $('modalBg').style.display='flex';
+  }catch{toast('Fehler beim Laden')}
+}
+async function delCfg(hwid){
+  if(!confirm('Config '+hwid+' wirklich LÖSCHEN?'))return;
+  const j=await api('/admin/configs/'+encodeURIComponent(hwid),{method:'DELETE'});
+  if(j.success){toast('Gelöscht: '+hwid);load()}else toast('Fehler: '+(j.error||''))
+}
+async function resetCfg(hwid){
+  if(!confirm('Config '+hwid+' ZURÜCKSETZEN (leeren)? Cheat lädt dann Defaults.'))return;
+  const j=await api('/admin/configs/'+encodeURIComponent(hwid)+'/reset',{method:'POST'});
+  if(j.success){toast('Zurückgesetzt: '+hwid);load()}else toast('Fehler: '+(j.error||''))
+}
+setInterval(()=>{if($('auto').checked&&$('app').style.display!=='none')load()},5000);
+if(TOKEN){showLogin(false);$('whoTxt').textContent='• '+(localStorage.getItem('cc_panel_user')||'');load()}else showLogin(true);
+</script>
+</body>
+</html>

@@ -60,6 +60,7 @@ USER_CHECK_CHANNEL_ID  = 1539925997766578267
 KEYS_OVERVIEW_CHANNEL_ID = 1543799035327156284
 BOT_STATUS_CHANNEL_ID  = 1539243946373550111
 CHECK_CHANNEL_ID       = 1553042285762056294
+PANEL_CHANNEL_ID       = 1561487185683939560   # Config-Panel: Logins erstellen/verwalten
 
 # — General —
 BOT_START_TIME = datetime.now()
@@ -677,6 +678,14 @@ def check_api_status():
 
 init_db()
 init_cloud_db()
+
+# Config-Cloud-Panel (Cheat-Sync + Admin-Panel mit eigenen Logins)
+try:
+    from config_cloud_panel import init_config_cloud as _init_config_cloud, set_panel_sync as _set_panel_sync
+    _init_config_cloud(DATABASE, CLOUD_DATABASE)
+    _set_panel_sync(sync_db_to_gist)
+except Exception as _ccp_err:
+    print(f"[CONFIG-CLOUD] init failed: {_ccp_err}")
 
 
 # ══════════════════════════════════════════════════════════════
@@ -1321,6 +1330,15 @@ except Exception as _chat_err:
     print(f"[CHAT] mount failed: {_chat_err}")
 
 
+# ---- Config Cloud (Cheat /cloud/export + /cloud/import, Panel /cloud/panel) ----
+try:
+    from config_cloud_panel import register_config_cloud
+    register_config_cloud(app)
+    print("[CONFIG-CLOUD] Routen registriert (/cloud/export, /cloud/import, /cloud/panel)")
+except Exception as _ccp_err:
+    print(f"[CONFIG-CLOUD] mount failed: {_ccp_err}")
+
+
 # ══════════════════════════════════════════════════════════════
 #  Discord Bot  –  Commands
 # ══════════════════════════════════════════════════════════════
@@ -1628,8 +1646,125 @@ async def listwhitelist(ctx):
             name = user.name
         except Exception:
             name = "Unbekannt"
-        embed.add_field(name=name, value=f"`{user_id}` · seit {added_at[:10]}", inline=False)
+        embed.add_field(name=name, value=f"`{user_id}` �� seit {added_at[:10]}", inline=False)
     await ctx.send(embed=embed, ephemeral=True)
+
+
+# ---- Config-Panel Accounts (nur Config-Panel-Channel, nur Whitelist) ----
+
+PANEL_URL = "https://xyz-x05g.onrender.com/cloud/panel"
+
+
+@bot.command(name="panelcreate")
+async def panelcreate(ctx, username: str, password: str):
+    """Erstellt einen Config-Panel-Login: !panelcreate <username> <passwort> (nur im Config-Panel-Channel)"""
+    if ctx.channel.id != PANEL_CHANNEL_ID:
+        return
+    if not is_whitelisted(ctx.author.id):
+        await ctx.send(embed=error_embed("Kein Zugriff"), delete_after=5)
+        await ctx.message.delete()
+        return
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
+    try:
+        from config_cloud_panel import create_panel_account, sync_accounts_to_gist
+    except Exception as e:
+        await ctx.send(embed=error_embed("Fehler", f"Modul nicht verfügbar: `{e}`"))
+        return
+    ok, msg = await asyncio.to_thread(create_panel_account, username, password, str(ctx.author.id))
+    if not ok:
+        await ctx.send(embed=error_embed("Account nicht erstellt", msg), delete_after=15)
+        return
+    await asyncio.to_thread(sync_accounts_to_gist)
+    embed = success_embed("Panel-Login erstellt",
+                          f"Username: `{username.strip().lower()}`\nPasswort: `{password}`\n\n"
+                          f"Panel: {PANEL_URL}\n\nSpeicher das Passwort, es wird nicht erneut angezeigt.")
+    await ctx.send(embed=embed, delete_after=60)
+    await send_log("Panel-Account erstellt", ctx.author, f"Username: `{username.strip().lower()}`", ACCENT_GREEN)
+
+
+@bot.command(name="panelpass")
+async def panelpass(ctx, username: str, password: str):
+    """Setzt das Passwort eines Panel-Accounts: !panelpass <username> <neues-passwort>"""
+    if ctx.channel.id != PANEL_CHANNEL_ID:
+        return
+    if not is_whitelisted(ctx.author.id):
+        await ctx.send(embed=error_embed("Kein Zugriff"), delete_after=5)
+        await ctx.message.delete()
+        return
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
+    try:
+        from config_cloud_panel import set_panel_password, sync_accounts_to_gist
+    except Exception as e:
+        await ctx.send(embed=error_embed("Fehler", f"Modul nicht verfügbar: `{e}`"))
+        return
+    ok, msg = await asyncio.to_thread(set_panel_password, username, password)
+    if not ok:
+        await ctx.send(embed=error_embed("Passwort nicht geändert", msg), delete_after=15)
+        return
+    await asyncio.to_thread(sync_accounts_to_gist)
+    embed = success_embed("Passwort geändert",
+                          f"Username: `{username.strip().lower()}`\nNeues Passwort: `{password}`")
+    await ctx.send(embed=embed, delete_after=60)
+    await send_log("Panel-Passwort geändert", ctx.author, f"Username: `{username.strip().lower()}`", ACCENT_YELLOW)
+
+
+@bot.command(name="paneldel")
+async def paneldel(ctx, username: str):
+    """Löscht einen Panel-Account: !paneldel <username>"""
+    if ctx.channel.id != PANEL_CHANNEL_ID:
+        return
+    if not is_whitelisted(ctx.author.id):
+        await ctx.send(embed=error_embed("Kein Zugriff"), delete_after=5)
+        await ctx.message.delete()
+        return
+    try:
+        await ctx.message.delete()
+    except Exception:
+        pass
+    try:
+        from config_cloud_panel import delete_panel_account, sync_accounts_to_gist
+    except Exception as e:
+        await ctx.send(embed=error_embed("Fehler", f"Modul nicht verfügbar: `{e}`"))
+        return
+    ok, msg = await asyncio.to_thread(delete_panel_account, username)
+    if not ok:
+        await ctx.send(embed=error_embed("Nicht gelöscht", msg), delete_after=15)
+        return
+    await asyncio.to_thread(sync_accounts_to_gist)
+    await ctx.send(embed=success_embed("Account gelöscht", msg), delete_after=15)
+    await send_log("Panel-Account gelöscht", ctx.author, f"Username: `{username.strip().lower()}`", ACCENT_RED)
+
+
+@bot.command(name="panellist")
+async def panellist(ctx):
+    """Listet alle Config-Panel-Accounts"""
+    if ctx.channel.id != PANEL_CHANNEL_ID:
+        return
+    if not is_whitelisted(ctx.author.id):
+        await ctx.send(embed=error_embed("Kein Zugriff"), delete_after=5)
+        await ctx.message.delete()
+        return
+    try:
+        from config_cloud_panel import list_panel_accounts
+    except Exception as e:
+        await ctx.send(embed=error_embed("Fehler", f"Modul nicht verfügbar: `{e}`"))
+        return
+    accounts = await asyncio.to_thread(list_panel_accounts)
+    embed = make_embed("Config-Panel Accounts", f"Panel: {PANEL_URL}")
+    if not accounts:
+        embed.add_field(name="Keine Accounts", value="Erstelle einen mit `!panelcreate <username> <passwort>`", inline=False)
+    for a in accounts:
+        value = f"erstellt: {(a.get('created_at') or '?')[:10]}"
+        if a.get("last_login"):
+            value += f" · letzter Login: {a['last_login'][:16].replace('T', ' ')}"
+        embed.add_field(name=a["username"], value=value, inline=False)
+    await ctx.send(embed=embed, delete_after=30)
 
 
 @bot.command()

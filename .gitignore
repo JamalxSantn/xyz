@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 keys.db
+cloud.db
+.discord_token
+ticket_data.json
+start.bat
