@@ -692,7 +692,7 @@ except Exception as _ccp_err:
 #  Flask API Server
 # ══════════════════════════════════════════════════════════════
 
-app = Flask(__name__, template_folder='templates')
+app = Flask(__name__, template_folder='templates', static_folder=os.path.join(os.path.dirname(os.path.abspath(__file__)), 'static'))
 app.config['MAX_CONTENT_LENGTH'] = 3 * 1024 * 1024
 
 
